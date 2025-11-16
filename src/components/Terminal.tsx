@@ -5,6 +5,16 @@ import '@xterm/xterm/css/xterm.css'
 
 export default function TerminalComponent() {
   const containerRef = useRef<HTMLDivElement | null>(null)
+  // Track if terminal is mounted
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      return 'Are you sure you want to leave? Changes you made may not be saved.'
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [])
 
   useEffect(() => {
     const term = new Terminal({
@@ -39,8 +49,7 @@ export default function TerminalComponent() {
     prompt()
 
     term.onData((data: string) => {
-      for (let i = 0; i < data.length; i++) {
-        const ch = data[i]
+      for (const ch of data) {
         if (ch === '\r') {
           const cmd = buffer.trim()
           handleCommand(cmd)
@@ -99,6 +108,6 @@ export default function TerminalComponent() {
 
   // Make the terminal container fill the entire viewport height and use a dark background
   return (
-    <div ref={containerRef} className="h-screen bg-neutral-700" />
+    <div ref={containerRef} className="h-screen bg-gray-900" />
   )
 }
