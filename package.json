@@ -12,8 +12,12 @@
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
+		"@protobuf-ts/runtime": "^2.11.1",
+		"@tailwindcss/vite": "^4.1.17",
+		"hono": "^4.10.6",
 		"react": "^19.1.1",
-		"react-dom": "^19.1.1"
+		"react-dom": "^19.1.1",
+		"tailwindcss": "^4.1.17"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "^1.14.2",
