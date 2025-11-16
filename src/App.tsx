@@ -1,12 +1,7 @@
-import { useState } from 'react'
+import TerminalComponent from './components/Terminal'
 
 function App() {
-
-  return (
-    <div className="min-h-screen flex flex-col font-sans bg-neutral-900">
-
-    </div>
-  )
+  return <TerminalComponent />
 }
 
 export default App
