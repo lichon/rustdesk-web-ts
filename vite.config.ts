@@ -9,4 +9,14 @@ export default defineConfig({
     tailwindcss(),
     cloudflare(),
   ],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:1122',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+        ws: true,
+      },
+    },
+  },
 });

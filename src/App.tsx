@@ -1,7 +1,8 @@
 import TerminalComponent from './components/Terminal'
 
 function App() {
-  return <TerminalComponent />
+  const backend = '//localhost:1122/ws'
+  return <TerminalComponent backend={backend} />
 }
 
 export default App

@@ -1,12 +1,18 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 
-export default function TerminalComponent() {
+type Props = {
+  backend: string
+}
+
+export default function TerminalComponent({ backend }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   // Track if terminal is mounted
   useEffect(() => {
+    console.log('TerminalComponent mounted')
     const handleBeforeUnload = () => {
       return 'Are you sure you want to leave? Changes you made may not be saved.'
     }
@@ -32,66 +38,69 @@ export default function TerminalComponent() {
 
     const fit = new FitAddon()
     term.loadAddon(fit)
-
-    if (!containerRef.current) return
-    term.open(containerRef.current)
-
-    term.writeln('Welcome to the web terminal (xterm.js)')
-    term.writeln('Type `help` for available commands.')
-
-    let buffer = ''
-
-    function prompt() {
-      term.write('\r\n$ ')
-      buffer = ''
+    // Activate the WebGL addon
+    try {
+      term.loadAddon(new WebglAddon())
+      console.log('xterm webgl renderer loaded')
+    } catch (e) {
+      console.warn('xterm webgl renderer failed to load:', e)
     }
-
-    prompt()
-
-    term.onData((data: string) => {
-      for (const ch of data) {
-        if (ch === '\r') {
-          const cmd = buffer.trim()
-          handleCommand(cmd)
-        } else if (ch === '\u0003') {
-          // Ctrl+C
-          term.write('^C')
-          prompt()
-        } else if (ch === '\u007f' || ch === '\b') {
-          // Backspace
-          if (buffer.length > 0) {
-            buffer = buffer.slice(0, -1)
-            term.write('\b \b')
-          }
-        } else {
-          buffer += ch
-          term.write(ch)
-        }
-      }
-    })
-
-    function handleCommand(cmd: string) {
-      if (!cmd) {
-        prompt()
-        return
-      }
-      if (cmd === 'help') {
-        term.writeln('\r\nAvailable commands: help, clear, echo <text>')
-      } else if (cmd === 'clear') {
-        term.clear()
-      } else if (cmd.startsWith('echo ')) {
-        term.writeln('\r\n' + cmd.slice(5))
-      } else {
-        term.writeln(`\r\nUnknown command: ${cmd}`)
-      }
-      prompt()
-    }
-
-    // Keep terminal fit to container using ResizeObserver
+    // ep terminal fit to container using ResizeObserver
     const ro = new ResizeObserver(() => {
       try { fit.fit() } catch { /* ignore */ }
     })
-    ro.observe(containerRef.current)
+    ro.observe(containerRef.current!)
+    term.open(containerRef.current!)
+
+    const ws = new WebSocket(`${backend}`, 'tty')
+
+    ws.onopen = () => {
+      term.writeln('Connected to websocket backend.')
+      ws.send(new TextEncoder().encode(
+        JSON.stringify({
+          AuthToken: '',
+          columns: term.cols,
+          rows: term.rows
+        })))
+    }
+
+    ws.onmessage = async (event: MessageEvent) => {
+      const eventData = event.data as Blob
+      if (eventData.size < 1) {
+        return
+      }
+      const dataBytes = await eventData.arrayBuffer()
+      const line = new TextDecoder().decode(dataBytes)
+      const msgType = line.at(0)
+      switch (msgType) {
+        case '0':
+          term.write(line.slice(1))
+          break
+        case '1':
+          console.log('info:', line.slice(1))
+          break
+        case '2':
+          console.log('is windows:', line.slice(1))
+          break
+        default:
+          console.warn('Unknown message type:', msgType)
+      }
+    }
+
+    ws.onclose = () => {
+      term.writeln('\r\nConnection closed.')
+    }
+
+    ws.onerror = (error) => {
+      console.error('WebSocket Error: ', error)
+      term.writeln('\r\nWebSocket error.')
+    }
+
+    term.onData((data: string) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(new TextEncoder().encode('0' + data))
+      }
+    })
 
     // Also handle window resize as a fallback
     function onWindowResize() {
@@ -100,14 +109,13 @@ export default function TerminalComponent() {
     window.addEventListener('resize', onWindowResize)
 
     return () => {
-      window.removeEventListener('resize', onWindowResize)
+      ws?.close()
       ro.disconnect()
       term.dispose()
+      window.removeEventListener('resize', onWindowResize)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Make the terminal container fill the entire viewport height and use a dark background
-  return (
-    <div ref={containerRef} className="h-screen bg-gray-900" />
-  )
+  return <div ref={containerRef} className="h-screen bg-gray-900" />
 }
