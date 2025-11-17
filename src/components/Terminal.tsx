@@ -13,8 +13,9 @@ export default function TerminalComponent({ backend }: Props) {
   // Track if terminal is mounted
   useEffect(() => {
     console.log('TerminalComponent mounted')
-    const handleBeforeUnload = () => {
-      return 'Are you sure you want to leave? Changes you made may not be saved.'
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
@@ -27,8 +28,8 @@ export default function TerminalComponent({ backend }: Props) {
       cursorBlink: true,
       cols: 80,
       rows: 24,
-      fontFamily:
-        'ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Segoe UI Mono", monospace',
+      fontSize: 14,
+      fontFamily: 'Lucida Console, "Courier New", monospace',
       theme: {
         background: '#0b1220', // dark navy
         foreground: '#e6eef8', // light text
@@ -51,6 +52,7 @@ export default function TerminalComponent({ backend }: Props) {
     })
     ro.observe(containerRef.current!)
     term.open(containerRef.current!)
+    term.focus()
 
     const ws = new WebSocket(`${backend}`, 'tty')
 
