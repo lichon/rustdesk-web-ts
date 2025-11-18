@@ -14,7 +14,7 @@ type RustSession = {
   sessionId?: bigint
   closeReason?: string
   isOpen(): boolean
-  close(): void
+  close(notify?: (reason?: string) => void): void
   send(data: string): void
 }
 
@@ -37,13 +37,15 @@ class RustSessionImpl implements RustSession {
     return this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING
   }
 
-  close(): void {
+  close(notify?: (reason?: string) => void): void {
+    console.log(`Closing tty socket`)
+    if (notify) {
+      notify(this.closeReason)
+    }
     this.socket?.close()
   }
 
   send(data: string): void {
-    if (this.socket?.readyState !== WebSocket.OPEN)
-      return
     const dataBytes = new TextEncoder().encode(data)
     sendSocketMsg({
       terminalAction: deskMsg.TerminalAction.create({
@@ -85,18 +87,15 @@ class RustSessionImpl implements RustSession {
 
     const handleLoginResponse = (session: RustSession, loginResp: deskMsg.LoginResponse) => {
       if (loginResp.union.oneofKind === 'peerInfo') {
-        console.log('Login successful')
         ttyConfig.onSocketOpen?.()
         return true
       }
       if (loginResp.union.oneofKind === 'error') {
-        console.log(`Login failed: ${loginResp.union.error}`)
         session.closeReason = `Login failed: ${loginResp.union.error}`
       } else {
-        console.log(`Login failed: unknown reason`)
         session.closeReason = `Login failed: unknown reason`
       }
-      session.close()
+      session.close(ttyConfig.onSocketClose)
       return false
     }
 
@@ -117,14 +116,12 @@ class RustSessionImpl implements RustSession {
           }
           break
         case 'closed':
-          console.log('Terminal closed by server')
           session.closeReason = 'Terminal closed by server'
-          session.close()
+          session.close(ttyConfig.onSocketClose)
           break
         case 'error':
-          console.log(`Terminal session error:`, terminalResp.union.error.message)
           session.closeReason = `Terminal error: ${terminalResp.union.error.message}`
-          session.close()
+          session.close(ttyConfig.onSocketClose)
           break
         default:
           console.warn(`Unhandled terminal response: ${terminalResp.union.oneofKind}`)
@@ -158,9 +155,9 @@ class RustSessionImpl implements RustSession {
     socket.onmessage = async (event: MessageEvent) => {
       const dataBytes = new Uint8Array(await event.data.arrayBuffer())
       const msg = deskMsg.Message.fromBinary(dataBytes)
-      if (msg.union.oneofKind !== 'testDelay') {
-        console.log(`rustdesk on message ${msg.union.oneofKind}`, msg)
-      }
+      // if (msg.union.oneofKind !== 'testDelay') {
+      //   console.log(`rustdesk on message ${msg.union.oneofKind}`, msg)
+      // }
       switch (msg.union.oneofKind) {
         case 'testDelay':
           // echo back the testDelay message
@@ -206,8 +203,9 @@ class RustSessionImpl implements RustSession {
           break
         case 'misc':
           if (msg.union.misc?.union.oneofKind === 'closeReason') {
-            const closeReason = msg.union.misc?.union.closeReason
-            console.log(`Terminal closed: ${closeReason}`)
+            this.closeReason = msg.union.misc?.union.closeReason
+            console.log(`Terminal closed: ${this.closeReason}`)
+            this.close(ttyConfig.onSocketClose)
           }
           break
         default:
@@ -216,13 +214,12 @@ class RustSessionImpl implements RustSession {
     }
 
     socket.onclose = () => {
-      console.log(`tty socket closed`)
-      ttyConfig.onSocketClose?.(this.closeReason || '')
+      // ttyConfig.onSocketClose?.(this.closeReason)
     }
 
     socket.onerror = (error) => {
-      this.closeReason = `Socket error occurred: ${error.type}`
-      socket.close()
+      this.closeReason = `Socket error: ${error.type}`
+      ttyConfig.onSocketClose?.(this.closeReason)
     }
   }
 }
@@ -244,7 +241,7 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
     const targetId = ttyOpen.targetId || 'a123123'
     if (activeSession.current?.isOpen()) {
       activeSession.current.close()
-      console.warn(`TTY socket on, closing existing socket`)
+      console.warn(`TTY socket on, close existing socket`)
     }
 
     const punchResponse = await sendRendezvousRequest(ttyConfig.url, {
@@ -330,11 +327,14 @@ const sendRendezvousRequest = (serverUrl: string, data: unknown, timeoutMs: numb
   })
 }
 
-const sendSocketMsg = (data: object, socket: WebSocket, isRendezvous: boolean = false) => {
-  const type = Object.keys(data)[0]
-  if (type !== 'testDelay') {
-    console.log(`Sending socket message ${type}`, data)
+const sendSocketMsg = (data: object, socket?: WebSocket, isRendezvous: boolean = false) => {
+  if (socket?.readyState !== WebSocket.OPEN) {
+    return
   }
+  const type = Object.keys(data)[0]
+  // if (type !== 'testDelay') {
+  //   console.log(`Sending socket message ${type}`, data)
+  // }
   let binaryMessage: Uint8Array
   if (isRendezvous) {
     binaryMessage = rendezvous.RendezvousMessage.toBinary({

@@ -2,7 +2,7 @@ type TTYConfig = {
   url: string
   onAuthRequired: () => Promise<string>
   onSocketOpen?: () => void
-  onSocketClose?: (reason: string) => void
+  onSocketClose?: (reason?: string) => void
   onSocketData: (data: Uint8Array) => void
 }
 
