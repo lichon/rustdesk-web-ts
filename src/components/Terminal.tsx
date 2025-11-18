@@ -4,19 +4,34 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import useTTY from '../hooks/use-tty'
+import useRustDesk from '../hooks/use-rustdesk'
 
 type TerminalProps = {
-  websocketUrl: string
+  websocketUrl?: string
+  isRustDesk?: boolean
 }
 
-export default function TerminalComponent({ websocketUrl }: TerminalProps) {
+export default function TerminalComponent({ websocketUrl, isRustDesk = true }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
 
-  const { open: openTTY, send: sendUserInput, close: closeTTY } = useTTY({
-    url: websocketUrl,
+  const { open: openTTY, send: sendUserInput, close: closeTTY } = isRustDesk ? useRustDesk({
+    url: websocketUrl || "http://127.0.0.1/ws/id",
     onSocketData: (data: Uint8Array) => {
       termRef.current?.write(new TextDecoder().decode(data))
+    },
+    onAuthRequired: async () => {
+      // In a real application, you would prompt the user for a password
+      return Promise.resolve('')
+    }
+  }) : useTTY({
+    url: websocketUrl || 'ws://127.0.0.1:1122',
+    onSocketData: (data: Uint8Array) => {
+      termRef.current?.write(new TextDecoder().decode(data))
+    },
+    onAuthRequired: async () => {
+      // In a real application, you would prompt the user for a password
+      return Promise.resolve('')
     }
   })
 
@@ -26,7 +41,7 @@ export default function TerminalComponent({ websocketUrl }: TerminalProps) {
       e.preventDefault()
       e.returnValue = ''
     }
-    window.addEventListener('beforeunload', handleBeforeUnload)
+    // window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
       console.log('TerminalComponent unmounted')
       window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -69,7 +84,13 @@ export default function TerminalComponent({ websocketUrl }: TerminalProps) {
     term.focus()
     window.addEventListener('resize', onWindowResize)
 
-    openTTY(fit.proposeDimensions()?.cols, fit.proposeDimensions()?.rows)
+    openTTY({
+      cols: fit.proposeDimensions()?.cols || 80,
+      rows: fit.proposeDimensions()?.rows || 24
+    }).catch((err) => {
+      term.writeln(`\n\x1b[31mError: Failed to connect to terminal. ${err.message}\x1b[0m\n`)
+    })
+
     return () => {
       closeTTY()
       ro.disconnect()

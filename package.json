@@ -12,6 +12,7 @@
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
+		"@hpcc-js/wasm-zstd": "^1.7.0",
 		"@protobuf-ts/runtime": "^2.11.1",
 		"@tailwindcss/vite": "^4.1.17",
 		"@types/node": "^24.10.1",

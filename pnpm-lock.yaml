@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@hpcc-js/wasm-zstd':
+        specifier: ^1.7.0
+        version: 1.7.0
       '@protobuf-ts/runtime':
         specifier: ^2.11.1
         version: 2.11.1
@@ -566,6 +569,9 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@hpcc-js/wasm-zstd@1.7.0':
+    resolution: {integrity: sha512-Pa+NLBftmy8OlpuGrmCtbC2rCs93bsZoYEfgdqjuVu+953bfBceRUW79t8bq1D7Ywfc7A3LMu9hGSuyaCZ+uMw==}
 
   '@humanfs/core@0.19.1':
     resolution: {integrity: sha512-5DyQ4+1JEUzejeK1JGICcideyfUbGixgS9jNgex5nqkW+cY7WZhxBigmieN5Qnw9ZosSNVC9KQKyb+GUaGyKUA==}
@@ -2302,6 +2308,8 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
+
+  '@hpcc-js/wasm-zstd@1.7.0': {}
 
   '@humanfs/core@0.19.1': {}
 

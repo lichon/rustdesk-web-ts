@@ -1,31 +1,25 @@
 import { useRef } from 'react'
-
-type TTYConfig = {
-  url: string
-  onSocketOpen?: () => void
-  onSocketClose?: () => void
-  onSocketData: (data: Uint8Array) => void
-}
+import type { TTYConfig, TTYOpen } from '../types/tty-types'
 
 const useTTY = (ttyConfig: TTYConfig) => {
   const ttySocket = useRef<WebSocket | null>(null)
 
-  const open = (cols: number = 80, rows: number = 24) => {
+  const open = async (ttyOpen: TTYOpen) => {
     if (ttySocket.current && ttySocket.current.readyState in [WebSocket.OPEN, WebSocket.CONNECTING]) {
       ttySocket.current?.close()
       console.warn(`TTY socket was ${ttySocket.current?.readyState}, closing existing socket`)
     }
     const socket = new WebSocket(`${ttyConfig.url}`, 'tty')
-    console.log('new tty socket', socket)
     ttySocket.current = socket
+    console.log('new tty socket', socket)
 
     socket.onopen = () => {
-      console.log('tty socket opened', cols, rows)
+      console.log('tty socket opened', ttyOpen.cols, ttyOpen.rows)
       socket.send(new TextEncoder().encode(
         JSON.stringify({
           AuthToken: '',
-          columns: cols,
-          rows: rows
+          columns: ttyOpen.cols,
+          rows: ttyOpen.rows
         })))
       ttyConfig.onSocketOpen?.()
     }
@@ -53,13 +47,12 @@ const useTTY = (ttyConfig: TTYConfig) => {
     }
 
     socket.onclose = () => {
-      console.log('tty socket closed')
-      ttyConfig.onSocketClose?.()
+      ttyConfig.onSocketClose?.('')
     }
 
     socket.onerror = (error) => {
       console.error('tty socket Error: ', error)
-      ttyConfig.onSocketClose?.()
+      ttyConfig.onSocketClose?.('socket error')
     }
   }
 
