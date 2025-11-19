@@ -11,8 +11,7 @@ const { VITE_DEFAULT_TTY_URL } = import.meta.env
 const TEXT_DECODER = new TextDecoder()
 const CONFIG_KEYS = ['url']
 
-export default function TerminalComponent() {
-  const [wsUrl, setWsUrl] = useState(getDefaultUrl())
+function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: string) => void }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const authMode = useRef<boolean>(false)
@@ -72,19 +71,9 @@ export default function TerminalComponent() {
   })
 
   useEffect(() => {
-    console.log('TerminalComponent mounted')
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      e.returnValue = ''
-    }
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => {
-      console.log('TerminalComponent unmounted')
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-    }
-  }, [])
+    console.log('TerminalInner mounted with wsUrl:', wsUrl)
+    if (!containerRef.current) return
 
-  useEffect(() => {
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 14,
@@ -124,19 +113,7 @@ export default function TerminalComponent() {
           break
         case 'config':
           handleConfigCommand(term, args).then(([key, value]) => {
-            console.log(`Config updated: ${key} = ${value}`)
-            if (key === 'url') {
-              // tty type changed, reload the page
-              if (isRustDesk && isTTYdUrl(value)) {
-                window.location.reload()
-                return
-              }
-              if (!isRustDesk && !isTTYdUrl(value)) {
-                window.location.reload()
-                return
-              }
-              setWsUrl(value)
-            }
+            key === 'url' && setWsUrl(value)
           }).catch((err) => { console.log('Config command error', err) })
           break
         case 'clear':
@@ -181,9 +158,8 @@ export default function TerminalComponent() {
     // Activate the WebGL addon
     try {
       term.loadAddon(new WebglAddon())
-      console.log('xterm webgl renderer loaded')
     } catch (e) {
-      console.warn('xterm webgl renderer failed to load:', e)
+      console.warn('load xterm webgl error:', e)
     }
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -208,8 +184,28 @@ export default function TerminalComponent() {
     }
   }, [])
 
-  // Make the terminal container fill the entire viewport height and use a dark background
   return <div ref={containerRef} className='h-screen bg-gray-900' />
+}
+
+export default function TerminalComponent() {
+  const [wsUrl, setWsUrl] = useState(getDefaultUrl())
+
+  useEffect(() => {
+    console.log('TerminalComponent mounted')
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      console.log('TerminalComponent unmounted')
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [])
+
+  // Use a key to force remount of TerminalInner when wsUrl changes
+  // This correctly handles re-initialization of hooks and terminal state.
+  return <TerminalInner key={wsUrl} wsUrl={wsUrl} setWsUrl={setWsUrl} />
 }
 
 const isTTYdUrl = (url: string) => {
@@ -220,9 +216,10 @@ const getDefaultUrl = () => {
   return localStorage.getItem('url') || VITE_DEFAULT_TTY_URL
 }
 
-const setDefaultUrl = (url: string): boolean => {
+const setLocalConfig = (key: string, value: string): boolean => {
   // TODO chceck valid url
-  localStorage.setItem('url', url)
+  localStorage.setItem(key, value)
+  console.log(`Config set: ${key} = ${value}`)
   return true
 }
 
@@ -237,7 +234,8 @@ const helpMessage = (term: Terminal) => {
   term.writeln('\nAvailable commands:')
   term.writeln('  (c) connect <id>   - Connect to the server.')
   term.writeln('      config         - Show current settings.')
-  term.writeln('  (r) reload         - Reload the page.')
+  term.writeln('      config url <v> - Set backend URL.')
+  term.writeln('  (r) reload         - Reload the terminal.')
   term.writeln('  (h) help           - Show this help message.')
   term.writeln('      clear          - Clear the terminal screen.')
   term.writeln('')
@@ -269,8 +267,8 @@ const handleConfigCommand = async (term: Terminal, args: string[]) => {
   }
 
   const value = args[1]
-  if (key == 'url' && setDefaultUrl(value)) {
-    term.writeln(`\nURL set to: ${value}`)
+  if (setLocalConfig(key, value)) {
+    term.writeln(`\n${key} set to: ${value}`)
     term.write(`>`)
     return Promise.resolve([key, value])
   }
