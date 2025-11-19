@@ -72,7 +72,7 @@ export default function TerminalComponent() {
       e.preventDefault()
       e.returnValue = ''
     }
-    // window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
       console.log('TerminalComponent unmounted')
       window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -104,9 +104,6 @@ export default function TerminalComponent() {
         case 'r':
         case 'reload':
           window.location.reload()
-          break
-        case 'exit':
-          closeTTY()
           break
         case 'c':
         case 'connect':
