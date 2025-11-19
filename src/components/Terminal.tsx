@@ -51,7 +51,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
       })
     }
   }) : useTTY({
-    url: wsUrl.replace('ttyd://', '//'),
+    url: wsUrl.replace('ttyd://', 'ws://').replace('ttyds://', 'wss://'),
     onSocketData: (data: Uint8Array) => {
       termRef.current?.write(TEXT_DECODER.decode(data))
     },
@@ -108,7 +108,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
             targetId: args[0]
           }).catch((err) => {
             term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
-            term.write(`>`)
+            term.write('> ')
           })
           break
         case 'config':
@@ -118,10 +118,10 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
           break
         case 'clear':
           term.clear()
-          term.write(`>`)
+          term.write('> ')
           break
         default:
-          term.write(`>`)
+          term.write('> ')
           break
       }
     }
@@ -141,7 +141,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
         if (currentLine.trim()) {
           processCommand(currentLine)
         } else {
-          term.write('>')
+          term.write('> ')
         }
         currentLine = ''
       } else if (char === '\u007f') { // Backspace
@@ -209,7 +209,7 @@ export default function TerminalComponent() {
 }
 
 const isTTYdUrl = (url: string) => {
-  return url.startsWith('ttyd://')
+  return url.startsWith('ttyd://') || url.startsWith('ttyds://')
 }
 
 const getDefaultUrl = () => {
@@ -227,7 +227,7 @@ const helloMessage = (term: Terminal) => {
   term.writeln('Welcome to the RustDesk terminal!')
   term.writeln('Type "help" or "h" for a list of available commands.')
   term.writeln(`Current backend URL: ${getDefaultUrl()}\n`)
-  term.write(`>`)
+  term.write('> ')
 }
 
 const helpMessage = (term: Terminal) => {
@@ -239,13 +239,13 @@ const helpMessage = (term: Terminal) => {
   term.writeln('  (h) help           - Show this help message.')
   term.writeln('      clear          - Clear the terminal screen.')
   term.writeln('')
-  term.write(`>`)
+  term.write('> ')
 }
 
 const handleConfigCommand = async (term: Terminal, args: string[]) => {
   if (args.length == 0) {
     term.writeln(`\nBackend URL: ${getDefaultUrl()}`)
-    term.write(`>`)
+    term.write('> ')
     return Promise.reject()
   }
 
@@ -254,7 +254,7 @@ const handleConfigCommand = async (term: Terminal, args: string[]) => {
     term.writeln('Example:')
     term.writeln('  config url wss://hbbs.url/ws/id')
     term.writeln('  config url ttyd://ttyd.url')
-    term.write(`>`)
+    term.write('> ')
     return Promise.reject()
   }
 
@@ -262,17 +262,17 @@ const handleConfigCommand = async (term: Terminal, args: string[]) => {
   if (!CONFIG_KEYS.includes(key)) {
     term.writeln(`\nUnknown config key: ${key}`)
     term.writeln(`Supported config keys: ${CONFIG_KEYS.join(', ')}`)
-    term.write(`>`)
+    term.write('> ')
     return Promise.reject()
   }
 
   const value = args[1]
   if (setLocalConfig(key, value)) {
     term.writeln(`\n${key} set to: ${value}`)
-    term.write(`>`)
+    term.write('> ')
     return Promise.resolve([key, value])
   }
 
-  term.write(`>`)
+  term.write('> ')
   return Promise.reject()
 }
