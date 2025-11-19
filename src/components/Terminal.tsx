@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css'
 import useTTY from '../hooks/use-tty'
 import useRustDesk from '../hooks/use-rustdesk'
 
+const { VITE_DEFAULT_TTY_URL } = import.meta.env
 const TEXT_DECODER = new TextDecoder()
 const CONFIG_KEYS = ['url']
 
@@ -210,7 +211,7 @@ const isTTYdUrl = (url: string) => {
 }
 
 const getDefaultUrl = () => {
-  return localStorage.getItem('url') || 'ws://localhost/ws/id'
+  return localStorage.getItem('url') || VITE_DEFAULT_TTY_URL
 }
 
 const setDefaultUrl = (url: string): boolean => {

@@ -11,24 +11,9 @@
 		"not_found_handling": "single-page-application"
 	},
 	"migrations": [
-		{
-			"new_sqlite_classes": [
-				"Hbbr",
-				"Hbbs",
-			],
-			"tag": "v1"
-		}
 	],
 	"durable_objects": {
 		"bindings": [
-			{
-				"class_name": "Hbbr",
-				"name": "HBBR"
-			},
-			{
-				"class_name": "Hbbs",
-				"name": "HBBS"
-			}
 		]
 	},
 	"observability": {

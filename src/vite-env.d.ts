@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_HBBS_URL: string
+  readonly VITE_DEFAULT_TTY_URL: string
 }
 
 interface ImportMeta {
