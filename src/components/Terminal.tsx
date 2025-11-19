@@ -16,6 +16,7 @@ export default function TerminalComponent() {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const authMode = useRef<boolean>(false)
+  const ttyConnected = useRef<boolean>(false)
   const isRustDesk = !isTTYdUrl(wsUrl)
 
   const { open: openTTY, send: sendUserInput, close: closeTTY } = isRustDesk ? useRustDesk({
@@ -25,8 +26,10 @@ export default function TerminalComponent() {
     },
     onSocketOpen: () => {
       authMode.current = false
+      ttyConnected.current = true
     },
     onSocketClose(reason) {
+      ttyConnected.current = false
       authMode.current = false
       termRef.current?.writeln(`\n\x1b[31mConnection closed. ${reason}\x1b[0m\n`)
     },
@@ -49,14 +52,16 @@ export default function TerminalComponent() {
       })
     }
   }) : useTTY({
-    url: wsUrl.replace('ttyd://', 'ws://'),
+    url: wsUrl.replace('ttyd://', '//'),
     onSocketData: (data: Uint8Array) => {
       termRef.current?.write(TEXT_DECODER.decode(data))
     },
     onSocketOpen: () => {
       authMode.current = false
+      ttyConnected.current = true
     },
     onSocketClose(reason) {
+      ttyConnected.current = false
       authMode.current = false
       termRef.current?.writeln(`\n\x1b[31mConnection closed. ${reason}\x1b[0m\n`)
     },
@@ -138,10 +143,8 @@ export default function TerminalComponent() {
           term.clear()
           term.write(`>`)
           break
-        case '':
-          break
         default:
-          sendUserInput(line + '\r')
+          term.write(`>`)
           break
       }
     }
@@ -151,11 +154,17 @@ export default function TerminalComponent() {
         // console.log('In auth mode, ignoring terminal input')
         return
       }
+      if (ttyConnected.current) {
+        sendUserInput(data)
+        return
+      }
       const char = data
       if (char === '\r') { // Enter
         term.writeln('')
         if (currentLine.trim()) {
           processCommand(currentLine)
+        } else {
+          term.write('>')
         }
         currentLine = ''
       } else if (char === '\u007f') { // Backspace
