@@ -233,12 +233,15 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
 
 
   const open = async (ttyOpen: TTYOpen) => {
+    const targetId = ttyOpen.targetId
+    if (!targetId) {
+      throw new Error('No target ID provided')
+    }
     if (currentRequest.current) {
       return
     }
     currentRequest.current = ttyOpen
 
-    const targetId = ttyOpen.targetId || 'a123123'
     if (activeSession.current?.isOpen()) {
       activeSession.current.close()
       console.warn(`TTY socket on, close existing socket`)
@@ -298,7 +301,6 @@ const sendRendezvousRequest = (serverUrl: string, data: unknown, timeoutMs: numb
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(serverUrl)
     socket.onopen = () => {
-      console.log('rendezvous connected')
       const type = Object.keys(data)[0]
       const msg = {
         union: {

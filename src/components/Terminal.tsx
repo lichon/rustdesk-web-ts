@@ -7,21 +7,20 @@ import '@xterm/xterm/css/xterm.css'
 import useTTY from '../hooks/use-tty'
 import useRustDesk from '../hooks/use-rustdesk'
 
-type TerminalProps = {
-  websocketUrl?: string
-  isRustDesk?: boolean
-}
+const TEXT_DECODER = new TextDecoder()
+const CONFIG_KEYS = ['url']
 
-export default function TerminalComponent({ isRustDesk = true }: TerminalProps) {
+export default function TerminalComponent() {
+  const [wsUrl, setWsUrl] = useState(getDefaultUrl())
   const containerRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const authMode = useRef<boolean>(false)
-  const [wsUrl, setWsUrl] = useState("http://localhost/ws/id")
+  const isRustDesk = !isTTYdUrl(wsUrl)
 
   const { open: openTTY, send: sendUserInput, close: closeTTY } = isRustDesk ? useRustDesk({
     url: wsUrl,
     onSocketData: (data: Uint8Array) => {
-      termRef.current?.write(new TextDecoder().decode(data))
+      termRef.current?.write(TEXT_DECODER.decode(data))
     },
     onSocketOpen: () => {
       authMode.current = false
@@ -49,12 +48,19 @@ export default function TerminalComponent({ isRustDesk = true }: TerminalProps) 
       })
     }
   }) : useTTY({
-    url: wsUrl,
+    url: wsUrl.replace('ttyd://', 'ws://'),
     onSocketData: (data: Uint8Array) => {
-      termRef.current?.write(new TextDecoder().decode(data))
+      termRef.current?.write(TEXT_DECODER.decode(data))
+    },
+    onSocketOpen: () => {
+      authMode.current = false
+    },
+    onSocketClose(reason) {
+      authMode.current = false
+      termRef.current?.writeln(`\n\x1b[31mConnection closed. ${reason}\x1b[0m\n`)
     },
     onAuthRequired: async () => {
-      // In a real application, you would prompt the user for a password
+      // TODO implement auth for ttyd
       return Promise.resolve('')
     }
   })
@@ -90,32 +96,49 @@ export default function TerminalComponent({ isRustDesk = true }: TerminalProps) 
     const processCommand = (line: string) => {
       const [command, ...args] = line.trim().split(' ')
       switch (command) {
+        case 'h':
         case 'help':
-          term.writeln('\nAvailable commands:')
-          term.writeln('  connect <id>       - Connect to the server.')
-          term.writeln('  set url <new_url>  - Set the websocket URL.')
-          term.writeln('  help               - Show this help message.')
-          term.writeln('  clear              - Clear the terminal screen.')
+          helpMessage(term)
           break
+        case 'r':
+        case 'reload':
+          window.location.reload()
+          break
+        case 'exit':
+          closeTTY()
+          break
+        case 'c':
         case 'connect':
+          term.writeln(`Connecting to ${wsUrl}...`)
           openTTY({
             cols: fit.proposeDimensions()?.cols || 80,
             rows: fit.proposeDimensions()?.rows || 24,
             targetId: args[0]
           }).catch((err) => {
-            term.writeln(`\n\x1b[31mError: Failed to connect to terminal. ${err.message}\x1b[0m\n`)
+            term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
+            term.write(`>`)
           })
           break
-        case 'set':
-          if (args[0] === 'url' && args[1]) {
-            setWsUrl(args[1])
-            term.writeln(`\nURL set to: ${args[1]}`)
-          } else {
-            term.writeln('\nUsage: set url <new_url>')
-          }
+        case 'config':
+          handleConfigCommand(term, args).then(([key, value]) => {
+            console.log(`Config updated: ${key} = ${value}`)
+            if (key === 'url') {
+              // tty type changed, reload the page
+              if (isRustDesk && isTTYdUrl(value)) {
+                window.location.reload()
+                return
+              }
+              if (!isRustDesk && !isTTYdUrl(value)) {
+                window.location.reload()
+                return
+              }
+              setWsUrl(value)
+            }
+          }).catch((err) => { console.log('Config command error', err) })
           break
         case 'clear':
           term.clear()
+          term.write(`>`)
           break
         case '':
           break
@@ -168,9 +191,7 @@ export default function TerminalComponent({ isRustDesk = true }: TerminalProps) 
     term.focus()
     window.addEventListener('resize', onWindowResize)
 
-    term.writeln('Welcome to the terminal!')
-    term.writeln('Type "help" for a list of available commands.')
-    term.writeln(`current websocket URL: ${wsUrl}`)
+    helloMessage(term)
 
     return () => {
       closeTTY()
@@ -181,5 +202,72 @@ export default function TerminalComponent({ isRustDesk = true }: TerminalProps) 
   }, [])
 
   // Make the terminal container fill the entire viewport height and use a dark background
-  return <div ref={containerRef} className="h-screen bg-gray-900" />
+  return <div ref={containerRef} className='h-screen bg-gray-900' />
+}
+
+const isTTYdUrl = (url: string) => {
+  return url.startsWith('ttyd://')
+}
+
+const getDefaultUrl = () => {
+  return localStorage.getItem('url') || 'ws://localhost/ws/id'
+}
+
+const setDefaultUrl = (url: string): boolean => {
+  // TODO chceck valid url
+  localStorage.setItem('url', url)
+  return true
+}
+
+const helloMessage = (term: Terminal) => {
+  term.writeln('Welcome to the RustDesk terminal!')
+  term.writeln('Type "help" or "h" for a list of available commands.')
+  term.writeln(`Current backend URL: ${getDefaultUrl()}\n`)
+  term.write(`>`)
+}
+
+const helpMessage = (term: Terminal) => {
+  term.writeln('\nAvailable commands:')
+  term.writeln('  (c) connect <id>   - Connect to the server.')
+  term.writeln('      config         - Show current settings.')
+  term.writeln('  (r) reload         - Reload the page.')
+  term.writeln('  (h) help           - Show this help message.')
+  term.writeln('      clear          - Clear the terminal screen.')
+  term.writeln('')
+  term.write(`>`)
+}
+
+const handleConfigCommand = async (term: Terminal, args: string[]) => {
+  if (args.length == 0) {
+    term.writeln(`\nBackend URL: ${getDefaultUrl()}`)
+    term.write(`>`)
+    return Promise.reject()
+  }
+
+  if (args.length < 2) {
+    term.writeln('\nUsage: config url <value>')
+    term.writeln('Example:')
+    term.writeln('  config url wss://hbbs.url/ws/id')
+    term.writeln('  config url ttyd://ttyd.url')
+    term.write(`>`)
+    return Promise.reject()
+  }
+
+  const key = args[0]
+  if (!CONFIG_KEYS.includes(key)) {
+    term.writeln(`\nUnknown config key: ${key}`)
+    term.writeln(`Supported config keys: ${CONFIG_KEYS.join(', ')}`)
+    term.write(`>`)
+    return Promise.reject()
+  }
+
+  const value = args[1]
+  if (key == 'url' && setDefaultUrl(value)) {
+    term.writeln(`\nURL set to: ${value}`)
+    term.write(`>`)
+    return Promise.resolve([key, value])
+  }
+
+  term.write(`>`)
+  return Promise.reject()
 }
