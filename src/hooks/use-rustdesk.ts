@@ -7,6 +7,23 @@ import { Zstd } from "@hpcc-js/wasm-zstd";
 
 let DEBUG_CONFIG = false
 
+const DEFAULT_STUN_SERVER: RTCIceServer = {
+  urls: [
+    'stun:stun.cloudflare.com:3478',
+    'stun:stun.nextcloud.com:3478',
+    'stun:stun.nextcloud.com:443',
+  ]
+}
+
+function getTurnUrl(): URL | null {
+  const turnUrl = localStorage.getItem('turn-url')
+  return turnUrl ? new URL(turnUrl) : null
+}
+
+function getTurnOnly(): boolean {
+  return localStorage.getItem('turn-only') ? true : false
+}
+
 type RustSession = {
   targetId: string
   relayUrl?: string
@@ -62,14 +79,20 @@ class RustSessionImpl implements RustSession {
     if (this.pc) {
       this.pc.close()
     }
+    const iceServers: RTCIceServer[] = [DEFAULT_STUN_SERVER]
+    const turnUrl = getTurnUrl()
+    if (turnUrl) {
+      // eslint-disable-next-line
+      getTurnOnly() && iceServers.splice(0, iceServers.length)
+      iceServers.push({
+        urls: `turn:${turnUrl.host}`,
+        username: turnUrl.username,
+        credential: turnUrl.password,
+      })
+    }
     const pc = new RTCPeerConnection({
-      iceServers: [{
-        urls: [
-          'stun:stun.cloudflare.com:3478',
-          'stun:stun.nextcloud.com:3478',
-          'stun:stun.nextcloud.com:443',
-        ]
-      }]
+      iceServers: iceServers,
+      iceTransportPolicy: getTurnOnly() ? "relay" : "all"
     })
     if (DEBUG_CONFIG) {
       pc.onconnectionstatechange = () => {

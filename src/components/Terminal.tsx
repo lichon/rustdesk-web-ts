@@ -9,7 +9,7 @@ import useRustDesk from '../hooks/use-rustdesk'
 
 const { VITE_DEFAULT_TTY_URL } = import.meta.env
 const TEXT_DECODER = new TextDecoder()
-const CONFIG_KEYS = ['debug', 'url', 'webrtc']
+const CONFIG_KEYS = ['debug', 'url', 'webrtc', 'turn-url', 'turn-only']
 
 function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: string) => void }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
