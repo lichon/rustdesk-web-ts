@@ -1,8 +1,25 @@
 import { useRef } from 'react'
 import type { TTYConfig, TTYOpen } from '../types/tty-types'
 
+enum ServerCommand {
+  // server side
+  OUTPUT = '0',
+  SET_WINDOW_TITLE = '1',
+  SET_PREFERENCES = '2',
+}
+
+enum ClientCommand {
+  // client side
+  INPUT = '0',
+  RESIZE_TERMINAL = '1',
+  PAUSE = '2',
+  RESUME = '3',
+}
+
 const useTTY = (ttyConfig: TTYConfig) => {
   const ttySocket = useRef<WebSocket | null>(null)
+  const textEncoder = new TextEncoder()
+  const textDecoder = new TextDecoder()
 
   const open = async (ttyOpen: TTYOpen) => {
     if (ttySocket.current && ttySocket.current.readyState in [WebSocket.OPEN, WebSocket.CONNECTING]) {
@@ -15,7 +32,7 @@ const useTTY = (ttyConfig: TTYConfig) => {
 
     socket.onopen = () => {
       console.log('tty socket opened', ttyOpen.cols, ttyOpen.rows)
-      socket.send(new TextEncoder().encode(
+      socket.send(textEncoder.encode(
         JSON.stringify({
           AuthToken: '',
           columns: ttyOpen.cols,
@@ -29,17 +46,18 @@ const useTTY = (ttyConfig: TTYConfig) => {
       if (eventData.size < 1) {
         return
       }
-      const bytes = new Uint8Array(await eventData.arrayBuffer())
+      const arrayBuffer = await eventData.arrayBuffer()
+      const bytes = new Uint8Array(arrayBuffer)
       const msgType = bytes.at(0)
       switch (msgType) {
-        case '0'.charCodeAt(0):
-          ttyConfig.onSocketData(bytes.slice(1))
+        case ServerCommand.OUTPUT.charCodeAt(0):
+          ttyConfig.onSocketData(bytes.slice(1), arrayBuffer)
           break
-        case '1'.charCodeAt(0):
-          console.log('info:', new TextDecoder().decode(bytes.slice(1)))
+        case ServerCommand.SET_WINDOW_TITLE.charCodeAt(0):
+          console.log('set title:', textDecoder.decode(bytes.slice(1)))
           break
-        case '2'.charCodeAt(0):
-          console.log('is windows:', new TextDecoder().decode(bytes.slice(1)))
+        case ServerCommand.SET_PREFERENCES.charCodeAt(0):
+          console.log('set config:', textDecoder.decode(bytes.slice(1)))
           break
         default:
           console.warn('Unknown message type:', msgType)
@@ -56,9 +74,18 @@ const useTTY = (ttyConfig: TTYConfig) => {
     }
   }
 
-  const send = (data: string) => {
-    if (ttySocket.current?.readyState === WebSocket.OPEN) {
-      ttySocket.current?.send(new TextEncoder().encode('0' + data))
+  const send = (data: string | Uint8Array) => {
+    const socket = ttySocket.current
+    if (socket?.readyState != WebSocket.OPEN) {
+      return
+    }
+    if (typeof data === 'string') {
+      socket.send(textEncoder.encode(ClientCommand.INPUT + data))
+    } else {
+      const payload = new Uint8Array(data.length + 1);
+      payload[0] = ClientCommand.INPUT.charCodeAt(0);
+      payload.set(data, 1);
+      socket.send(payload);
     }
   }
 

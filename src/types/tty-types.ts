@@ -1,10 +1,9 @@
 type TTYConfig = {
   url: string
-  debug?: boolean
   onAuthRequired: () => Promise<string>
   onSocketOpen?: () => void
   onSocketClose?: (reason?: string) => void
-  onSocketData: (data: Uint8Array) => void
+  onSocketData: (data: Uint8Array, buffer?: ArrayBuffer) => void
 }
 
 type TTYOpen = {

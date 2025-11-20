@@ -15,6 +15,10 @@ const DEFAULT_STUN_SERVER: RTCIceServer = {
   ]
 }
 
+function getDebug(): boolean {
+  return localStorage.getItem('debug') === 'true' || false
+}
+
 function getTurnUrl(): URL | null {
   const turnUrl = localStorage.getItem('turn-url')
   return turnUrl ? new URL(turnUrl) : null
@@ -33,7 +37,7 @@ type RustSession = {
   closeReason?: string
   isOpen(): boolean
   close(notify?: (reason?: string) => void): void
-  send(data: string): void
+  send(data: string | Uint8Array): void
 }
 
 class RustSessionImpl implements RustSession {
@@ -140,8 +144,8 @@ class RustSessionImpl implements RustSession {
     }
   }
 
-  send(data: string): void {
-    const dataBytes = new TextEncoder().encode(data)
+  send(data: string | Uint8Array): void {
+    const dataBytes = data instanceof Uint8Array ? data : new TextEncoder().encode(data)
     sendSocketMsg({
       terminalAction: deskMsg.TerminalAction.create({
         union: {
@@ -338,7 +342,7 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
   }, [])
 
   const open = async (ttyOpen: TTYOpen) => {
-    DEBUG_CONFIG = ttyConfig.debug || false
+    DEBUG_CONFIG = getDebug()
     const targetId = ttyOpen.targetId
     if (!targetId) {
       throw new Error('No target ID provided')
@@ -396,7 +400,7 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
     }
   }
 
-  const send = (data: string) => {
+  const send = (data: string | Uint8Array) => {
     activeSession.current?.send(data)
   }
 
