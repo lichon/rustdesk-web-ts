@@ -1,5 +1,6 @@
 type TTYConfig = {
   url: string
+  debug?: boolean
   onAuthRequired: () => Promise<string>
   onSocketOpen?: () => void
   onSocketClose?: (reason?: string) => void

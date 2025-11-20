@@ -5,6 +5,8 @@ import type { TTYConfig, TTYOpen } from '../types/tty-types'
 
 import { Zstd } from "@hpcc-js/wasm-zstd";
 
+let DEBUG_CONFIG = false
+
 type RustSession = {
   targetId: string
   relayUrl?: string
@@ -39,6 +41,9 @@ class RustSessionImpl implements RustSession {
     }
     const b64 = url.replace('webrtc://', '')
     const descJson = atob(b64)
+    if (DEBUG_CONFIG) {
+      console.log('WebRTC recv Description:', descJson)
+    }
     return JSON.parse(descJson)
   }
 
@@ -47,6 +52,9 @@ class RustSessionImpl implements RustSession {
       return undefined
     }
     const localDesc = this.pc.localDescription.toJSON()
+    if (DEBUG_CONFIG) {
+      console.log('WebRTC send Description:', JSON.stringify(localDesc))
+    }
     return `webrtc://${btoa(JSON.stringify(localDesc))}`
   }
 
@@ -63,12 +71,29 @@ class RustSessionImpl implements RustSession {
         ]
       }]
     })
+    if (DEBUG_CONFIG) {
+      pc.onconnectionstatechange = () => {
+        console.log(`PC connection state: ${pc.connectionState}`)
+      }
+      pc.onicecandidateerror = (event) => {
+        console.error('ICE Candidate Error:', event)
+      }
+      pc.onsignalingstatechange = () => {
+        console.log(`PC signaling state: ${pc.signalingState}`)
+      }
+    }
     this.socket = pc.createDataChannel('bootstrap')
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
     // wait for ICE gathering to complete
     await new Promise((resolve) => {
-      setTimeout(resolve, 1000)
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === 'complete') {
+          resolve(null)
+        }
+      }
+      // in case icegatheringstatechange doesn't fire
+      setTimeout(resolve, 6000)
     })
     this.pc = pc
   }
@@ -115,8 +140,8 @@ class RustSessionImpl implements RustSession {
       socket = this.socket!
     } else {
       socket = this.socket = new WebSocket(relayUrl)
+      socket.binaryType = 'arraybuffer'
     }
-    socket.binaryType = 'arraybuffer'
     const sessionId = this.sessionId = BigInt(Date.now())
 
     const handleChallenge = async ({ salt, challenge }: { salt: string, challenge: string }) => {
@@ -212,9 +237,10 @@ class RustSessionImpl implements RustSession {
     socket.onmessage = async (event: MessageEvent) => {
       const dataBytes = new Uint8Array(event.data)
       const msg = deskMsg.Message.fromBinary(dataBytes)
-      // if (msg.union.oneofKind !== 'testDelay') {
-      //   console.log(`Recving socket message ${msg.union.oneofKind}`, msg)
-      // }
+
+      if (DEBUG_CONFIG && msg.union.oneofKind !== 'testDelay') {
+        console.log(`Recving socket message ${msg.union.oneofKind}`, msg)
+      }
       switch (msg.union.oneofKind) {
         case 'testDelay':
           // echo back the testDelay message
@@ -289,6 +315,7 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
   }, [])
 
   const open = async (ttyOpen: TTYOpen) => {
+    DEBUG_CONFIG = ttyConfig.debug || false
     const targetId = ttyOpen.targetId
     if (!targetId) {
       throw new Error('No target ID provided')
@@ -401,9 +428,9 @@ const sendSocketMsg = (data: object, socket?: WebSocket | RTCDataChannel, isRend
     return
   }
   const type = Object.keys(data)[0]
-  // if (type !== 'testDelay') {
-  //   console.log(`Sending socket message ${type}`, data)
-  // }
+  if (DEBUG_CONFIG && type !== 'testDelay') {
+    console.log(`Sending socket message ${type}`, data)
+  }
   let binaryMessage: Uint8Array
   if (isRendezvous) {
     binaryMessage = rendezvous.RendezvousMessage.toBinary({

@@ -9,7 +9,7 @@ import useRustDesk from '../hooks/use-rustdesk'
 
 const { VITE_DEFAULT_TTY_URL } = import.meta.env
 const TEXT_DECODER = new TextDecoder()
-const CONFIG_KEYS = ['url', 'webrtc']
+const CONFIG_KEYS = ['debug', 'url', 'webrtc']
 
 function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: string) => void }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -21,6 +21,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { open: openTTY, send: sendUserInput, close: closeTTY } = isRustDesk ? useRustDesk({
     url: wsUrl,
+    debug: getLocalConfig('debug') === 'true',
     onSocketData: (data: Uint8Array) => {
       termRef.current?.write(TEXT_DECODER.decode(data))
     },
@@ -54,6 +55,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
     }
   }) : useTTY({ // eslint-disable-line react-hooks/rules-of-hooks
     url: wsUrl.replace('ttyd://', 'ws://').replace('ttyds://', 'wss://'),
+    debug: getLocalConfig('debug') === 'true',
     onSocketData: (data: Uint8Array) => {
       termRef.current?.write(TEXT_DECODER.decode(data))
     },
@@ -131,7 +133,6 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
     }
 
     term.onData((data: string) => {
-      console.log('onData:', data)
       if (authMode.current) {
         // console.log('In auth mode, ignoring terminal input')
         return
@@ -246,12 +247,14 @@ const helloMessage = (term: Terminal) => {
 
 const helpMessage = (term: Terminal) => {
   term.writeln('\nAvailable commands:')
-  term.writeln('  (c) connect <id>   - Connect to the server.')
-  term.writeln('      config         - Show current settings.')
-  term.writeln('      config url <v> - Set backend URL.')
-  term.writeln('  (r) reload         - Reload the terminal.')
-  term.writeln('  (h) help           - Show this help message.')
-  term.writeln('      clear          - Clear the terminal screen.')
+  term.writeln('  (c) connect <id>       - Connect to the server.')
+  term.writeln('      config             - Show current settings.')
+  term.writeln('      config url <v>     - Set backend URL.')
+  term.writeln('      config webrtc true - Enable webrtc.')
+  term.writeln('      config debug true  - Enable debug.')
+  term.writeln('  (r) reload             - Reload the terminal.')
+  term.writeln('  (h) help               - Show this help message.')
+  term.writeln('      clear              - Clear the terminal screen.')
   term.writeln('')
   term.write('> ')
 }
