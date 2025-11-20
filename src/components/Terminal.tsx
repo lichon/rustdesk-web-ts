@@ -249,7 +249,6 @@ function loadZmodemAddon(term: Terminal, send: (data: string | Uint8Array) => vo
   }
   // Zmodem addon
   const zmodemAddon = new ZmodemAddon({
-    windows: true,
     trzsz: trzszEnabled,
     zmodem: zmodemEnabled,
     sender: (data: string | Uint8Array) => {
