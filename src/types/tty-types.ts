@@ -10,6 +10,7 @@ type TTYOpen = {
   cols: number
   rows: number
   targetId?: string
+  useWebRTC?: boolean
 }
 
 export type { TTYConfig, TTYOpen }

@@ -7,9 +7,8 @@ import { Zstd } from "@hpcc-js/wasm-zstd";
 
 type RustSession = {
   targetId: string
-  relayUrl: string
-  uuid: string
-  socket?: WebSocket
+  relayUrl?: string
+  socket?: WebSocket | RTCDataChannel
   serviceId?: string
   sessionId?: bigint
   closeReason?: string
@@ -20,20 +19,64 @@ type RustSession = {
 
 class RustSessionImpl implements RustSession {
   targetId: string
-  relayUrl: string
-  uuid: string
-  socket?: WebSocket
+  relayUrl?: string
+  socket?: WebSocket | RTCDataChannel
   serviceId?: string
   sessionId?: bigint
   closeReason?: string
 
-  constructor(targetId: string, relayUrl: string, uuid: string) {
+  // datachannel
+  pc?: RTCPeerConnection
+  dc?: RTCDataChannel
+
+  constructor(targetId: string) {
     this.targetId = targetId
-    this.relayUrl = relayUrl
-    this.uuid = uuid
+  }
+
+  getRemoteOfferFromWebrtcUrl(url: string): RTCSessionDescriptionInit | undefined {
+    if (!url.startsWith('webrtc://')) {
+      return undefined
+    }
+    const b64 = url.replace('webrtc://', '')
+    const descJson = atob(b64)
+    return JSON.parse(descJson)
+  }
+
+  getWebrtcEndpoint(): string | undefined {
+    if (!this.pc || !this.pc.localDescription) {
+      return undefined
+    }
+    const localDesc = this.pc.localDescription.toJSON()
+    return `webrtc://${btoa(JSON.stringify(localDesc))}`
+  }
+
+  async initDataChannel(): Promise<void> {
+    if (this.pc) {
+      this.pc.close()
+    }
+    const pc = new RTCPeerConnection({
+      iceServers: [{
+        urls: [
+          'stun:stun.cloudflare.com:3478',
+          'stun:stun.nextcloud.com:3478',
+          'stun:stun.nextcloud.com:443',
+        ]
+      }]
+    })
+    this.socket = pc.createDataChannel('bootstrap')
+    const offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    // wait for ICE gathering to complete
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000)
+    })
+    this.pc = pc
   }
 
   isOpen(): boolean {
+    if (this.pc) {
+      return this.socket?.readyState == 'open' || this.socket?.readyState == 'connecting'
+    }
     return this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING
   }
 
@@ -43,6 +86,10 @@ class RustSessionImpl implements RustSession {
       notify(this.closeReason)
     }
     this.socket?.close()
+    if (this.pc) {
+      this.pc.close()
+      this.pc = undefined
+    }
   }
 
   send(data: string): void {
@@ -59,9 +106,17 @@ class RustSessionImpl implements RustSession {
     }, this.socket)
   }
 
-  start(ttyConfig: TTYConfig, openRequest: TTYOpen): void {
-    const socket = this.socket = new WebSocket(this.relayUrl)
-    const uuid = this.uuid
+  start(relayUrl: string, uuid: string, ttyConfig: TTYConfig, openRequest: TTYOpen): void {
+    let remoteOffer
+    let socket
+    // if relayUrl is webrtc and we have pc, use datachannel, fallback to websocket
+    if (this.pc && (remoteOffer = this.getRemoteOfferFromWebrtcUrl(relayUrl))) {
+      this.pc.setRemoteDescription(new RTCSessionDescription(remoteOffer))
+      socket = this.socket!
+    } else {
+      socket = this.socket = new WebSocket(relayUrl)
+    }
+    socket.binaryType = 'arraybuffer'
     const sessionId = this.sessionId = BigInt(Date.now())
 
     const handleChallenge = async ({ salt, challenge }: { salt: string, challenge: string }) => {
@@ -129,10 +184,12 @@ class RustSessionImpl implements RustSession {
     }
 
     socket.onopen = () => {
-      // relay request
-      sendSocketMsg({
-        requestRelay: rendezvous.RequestRelay.create({ uuid })
-      }, socket, true)
+      // bind socket to relay server, on for websocket
+      if (socket instanceof WebSocket) {
+        sendSocketMsg({
+          requestRelay: rendezvous.RequestRelay.create({ uuid })
+        }, socket, true)
+      }
       // login request
       sendSocketMsg({
         loginRequest: deskMsg.LoginRequest.create({
@@ -153,10 +210,10 @@ class RustSessionImpl implements RustSession {
     }
 
     socket.onmessage = async (event: MessageEvent) => {
-      const dataBytes = new Uint8Array(await event.data.arrayBuffer())
+      const dataBytes = new Uint8Array(event.data)
       const msg = deskMsg.Message.fromBinary(dataBytes)
       // if (msg.union.oneofKind !== 'testDelay') {
-      //   console.log(`rustdesk on message ${msg.union.oneofKind}`, msg)
+      //   console.log(`Recving socket message ${msg.union.oneofKind}`, msg)
       // }
       switch (msg.union.oneofKind) {
         case 'testDelay':
@@ -217,8 +274,8 @@ class RustSessionImpl implements RustSession {
       // ttyConfig.onSocketClose?.(this.closeReason)
     }
 
-    socket.onerror = (error) => {
-      this.closeReason = `Socket error: ${error.type}`
+    socket.onerror = () => {
+      this.closeReason = `Socket error`
       ttyConfig.onSocketClose?.(this.closeReason)
     }
   }
@@ -230,7 +287,6 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
 
   useEffect(() => {
   }, [])
-
 
   const open = async (ttyOpen: TTYOpen) => {
     const targetId = ttyOpen.targetId
@@ -246,16 +302,22 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
       activeSession.current.close()
       console.warn(`TTY socket on, close existing socket`)
     }
+    const session = activeSession.current = new RustSessionImpl(targetId)
+    if (ttyOpen.useWebRTC) {
+      await session.initDataChannel()
+    }
 
-    const punchResponse = await sendRendezvousRequest(ttyConfig.url, {
-      punchHoleRequest: rendezvous.PunchHoleRequest.create({
-        id: targetId,
-        natType: rendezvous.NatType.SYMMETRIC,
-        connType: rendezvous.ConnType.TERMINAL,
-      })
-    })
-    const msg = punchResponse as rendezvous.RendezvousMessage
     try {
+      const punchResponse = await sendRendezvousRequest(ttyConfig.url, {
+        punchHoleRequest: rendezvous.PunchHoleRequest.create({
+          id: targetId,
+          natType: rendezvous.NatType.SYMMETRIC,
+          connType: rendezvous.ConnType.TERMINAL,
+          version: session.getWebrtcEndpoint() || '1.4.4',
+        })
+      })
+      const msg = punchResponse as rendezvous.RendezvousMessage
+
       if (!['punchHoleResponse', 'relayResponse'].includes(msg.union.oneofKind || '')) {
         throw new Error(`Unexpected response: ${msg.union.oneofKind}`)
       }
@@ -267,13 +329,17 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
       }
 
       if (msg.union.oneofKind === 'relayResponse') {
+        const version = msg.union.relayResponse!.version
+        if (version && version.startsWith('webrtc://')) {
+          // use datachannel
+          session.start(version, msg.union.relayResponse!.uuid, ttyConfig, ttyOpen)
+          return
+        }
         const relayServer = msg.union.relayResponse!.relayServer
         if (!relayServer) {
           throw new Error('No relay server provided')
         }
-        const session = new RustSessionImpl(targetId, relayServer, msg.union.relayResponse!.uuid)
-        session.start(ttyConfig, ttyOpen)
-        activeSession.current = session
+        session.start(relayServer, msg.union.relayResponse!.uuid, ttyConfig, ttyOpen)
       }
     } finally {
       currentRequest.current = undefined
@@ -300,6 +366,7 @@ const sendRendezvousRequest = (serverUrl: string, data: unknown, timeoutMs: numb
   console.log(`Sending request to ${serverUrl}`, data)
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(serverUrl)
+    socket.binaryType = 'arraybuffer'
     socket.onopen = () => {
       const type = Object.keys(data)[0]
       const msg = {
@@ -311,9 +378,9 @@ const sendRendezvousRequest = (serverUrl: string, data: unknown, timeoutMs: numb
       socket.send(rendezvous.RendezvousMessage.toBinary(msg))
     }
     socket.onmessage = async (event: MessageEvent) => {
-      const dataBytes = new Uint8Array(await event.data.arrayBuffer())
+      const dataBytes = new Uint8Array(event.data)
       const msg = rendezvous.RendezvousMessage.fromBinary(dataBytes)
-      console.log(`rendezvous on response ${msg.union.oneofKind}`, msg)
+      console.log(`Recving response ${msg.union.oneofKind}`, msg)
       if (msg.union.oneofKind) {
         resolve(msg)
       } else {
@@ -329,8 +396,8 @@ const sendRendezvousRequest = (serverUrl: string, data: unknown, timeoutMs: numb
   })
 }
 
-const sendSocketMsg = (data: object, socket?: WebSocket, isRendezvous: boolean = false) => {
-  if (socket?.readyState !== WebSocket.OPEN) {
+const sendSocketMsg = (data: object, socket?: WebSocket | RTCDataChannel, isRendezvous: boolean = false) => {
+  if (!socket) {
     return
   }
   const type = Object.keys(data)[0]
@@ -353,7 +420,11 @@ const sendSocketMsg = (data: object, socket?: WebSocket, isRendezvous: boolean =
       }
     } as deskMsg.Message)
   }
-  socket.send(binaryMessage)
+  // Ensure the buffer is an ArrayBuffer, not SharedArrayBuffer
+  const arrayBuffer = binaryMessage.buffer instanceof ArrayBuffer
+    ? binaryMessage.buffer
+    : new Uint8Array(binaryMessage).buffer
+  socket.send(new Uint8Array(arrayBuffer))
 }
 
 export default useRustDesk

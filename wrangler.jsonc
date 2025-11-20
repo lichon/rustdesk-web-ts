@@ -6,7 +6,7 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "rustdesk-web-ts",
 	"main": "worker/index.ts",
-	"compatibility_date": "2025-11-15",
+	"compatibility_date": "2025-11-09",
 	"assets": {
 		"not_found_handling": "single-page-application"
 	},	
@@ -34,9 +34,6 @@
 	"observability": {
 		"enabled": true
 	},
-	"dev": {
-		"port": 80,
-	}
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

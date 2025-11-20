@@ -9,7 +9,7 @@ import useRustDesk from '../hooks/use-rustdesk'
 
 const { VITE_DEFAULT_TTY_URL } = import.meta.env
 const TEXT_DECODER = new TextDecoder()
-const CONFIG_KEYS = ['url']
+const CONFIG_KEYS = ['url', 'webrtc']
 
 function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: string) => void }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -18,12 +18,14 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
   const ttyConnected = useRef<boolean>(false)
   const isRustDesk = !isTTYdUrl(wsUrl)
 
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const { open: openTTY, send: sendUserInput, close: closeTTY } = isRustDesk ? useRustDesk({
     url: wsUrl,
     onSocketData: (data: Uint8Array) => {
       termRef.current?.write(TEXT_DECODER.decode(data))
     },
     onSocketOpen: () => {
+      console.log('TTYd socket opened')
       authMode.current = false
       ttyConnected.current = true
     },
@@ -50,12 +52,13 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
         listener = termRef.current?.onData(handleData)
       })
     }
-  }) : useTTY({
+  }) : useTTY({ // eslint-disable-line react-hooks/rules-of-hooks
     url: wsUrl.replace('ttyd://', 'ws://').replace('ttyds://', 'wss://'),
     onSocketData: (data: Uint8Array) => {
       termRef.current?.write(TEXT_DECODER.decode(data))
     },
     onSocketOpen: () => {
+      console.log('TTYd socket opened')
       authMode.current = false
       ttyConnected.current = true
     },
@@ -101,8 +104,9 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
           break
         case 'c':
         case 'connect':
-          term.writeln(`Connecting to ${wsUrl}...`)
+          term.writeln(`Connecting to ${wsUrl} with webRTC=${getLocalConfig('webrtc')}...`)
           openTTY({
+            useWebRTC: getLocalConfig('webrtc') === 'true',
             cols: fit.proposeDimensions()?.cols || 80,
             rows: fit.proposeDimensions()?.rows || 24,
             targetId: args[0]
@@ -113,7 +117,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
           break
         case 'config':
           handleConfigCommand(term, args).then(([key, value]) => {
-            key === 'url' && setWsUrl(value)
+            key === 'url' && setWsUrl(value) // eslint-disable-line
           }).catch((err) => { console.log('Config command error', err) })
           break
         case 'clear':
@@ -127,6 +131,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
     }
 
     term.onData((data: string) => {
+      console.log('onData:', data)
       if (authMode.current) {
         // console.log('In auth mode, ignoring terminal input')
         return
@@ -182,7 +187,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
       term.dispose()
       window.removeEventListener('resize', onWindowResize)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={containerRef} className='h-screen bg-gray-900' />
 }
@@ -216,6 +221,15 @@ const getDefaultUrl = () => {
   return localStorage.getItem('url') || VITE_DEFAULT_TTY_URL
 }
 
+const getLocalConfig = (key: string): string | null => {
+  return localStorage.getItem(key)
+}
+
+const delLocalConfig = (key: string) => {
+  localStorage.removeItem(key)
+  console.log(`Config deleted: ${key}`)
+}
+
 const setLocalConfig = (key: string, value: string): boolean => {
   // TODO chceck valid url
   localStorage.setItem(key, value)
@@ -244,13 +258,27 @@ const helpMessage = (term: Terminal) => {
 
 const handleConfigCommand = async (term: Terminal, args: string[]) => {
   if (args.length == 0) {
-    term.writeln(`\nBackend URL: ${getDefaultUrl()}`)
+    for (const key of CONFIG_KEYS) {
+      const value = getLocalConfig(key)
+      if (value) {
+        term.writeln(`${key}: ${value}`)
+      } else {
+        term.writeln(`${key}: (not set)`)
+      }
+    }
     term.write('> ')
     return Promise.reject()
   }
 
+  const key = args[0]
   if (args.length < 2) {
-    term.writeln('\nUsage: config url <value>')
+    if (CONFIG_KEYS.includes(key)) {
+      delLocalConfig(key)
+      term.writeln(`config ${key} cleared.`)
+      term.write('> ')
+      return Promise.reject()
+    }
+    term.writeln('Usage: config <key> <value>')
     term.writeln('Example:')
     term.writeln('  config url wss://hbbs.url/ws/id')
     term.writeln('  config url ttyd://ttyd.url')
@@ -258,9 +286,8 @@ const handleConfigCommand = async (term: Terminal, args: string[]) => {
     return Promise.reject()
   }
 
-  const key = args[0]
   if (!CONFIG_KEYS.includes(key)) {
-    term.writeln(`\nUnknown config key: ${key}`)
+    term.writeln(`Unknown config key: ${key}`)
     term.writeln(`Supported config keys: ${CONFIG_KEYS.join(', ')}`)
     term.write('> ')
     return Promise.reject()
@@ -268,7 +295,7 @@ const handleConfigCommand = async (term: Terminal, args: string[]) => {
 
   const value = args[1]
   if (setLocalConfig(key, value)) {
-    term.writeln(`\n${key} set to: ${value}`)
+    term.writeln(`${key} set to: ${value}`)
     term.write('> ')
     return Promise.resolve([key, value])
   }

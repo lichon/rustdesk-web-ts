@@ -8,9 +8,11 @@ export class Hbbr extends DurableObject {
   acceptor: WebSocket | undefined
   cachedMessagesFromInit: Array<string | ArrayBuffer> = []
   cachedMessagesFromAcceptor: Array<string | ArrayBuffer> = []
+  uuid: string = ''
 
-  async warmup(): Promise<void> {
-    console.log(`Hbbr warmup called`)
+  async warmup(uuid: string): Promise<void> {
+    this.uuid = uuid
+    console.log(`Hbbr warmup called for ${uuid}`)
   }
 
   async fetch(_req: Request): Promise<Response> {
@@ -86,6 +88,11 @@ export class Hbbr extends DurableObject {
   }
 
   handleRequestRelay(req: rendezvous.RequestRelay, socket: WebSocket) {
+    if (this.uuid && req.uuid !== this.uuid) {
+      // check relay uuid match
+      console.log(`hbbr uuid mismatch: ${req.uuid} != ${this.uuid}`)
+      return
+    }
     if (!this.initiator) {
       this.initiator = socket
       console.log(`setup initiator for uuid: ${req.uuid} cached msg: ${this.cachedMessagesFromAcceptor.length}`)
@@ -123,6 +130,10 @@ export class Hbbs extends DurableObject {
     uuid: string,
     socket: WebSocket,
   }> = new Map()
+  relayRequests: Map<string, {
+    reqSocket: WebSocket,
+    fallbackRelayUrl: string,
+  }> = new Map()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -146,7 +157,7 @@ export class Hbbs extends DurableObject {
     })
   }
 
-  async fetch(req: Request): Promise<Response> {
+  async fetch(_req: Request): Promise<Response> {
     // console.log(`hbbs fetch ${req.url}`)
     // Creates two ends of a WebSocket connection.
     const webSocketPair = new WebSocketPair()
@@ -192,7 +203,7 @@ export class Hbbs extends DurableObject {
   }
 
   // client closes the connection, the runtime will invoke the webSocketClose() handler.
-  async webSocketClose(ws: WebSocket, code: number, _reason: string, _wasClean: boolean) {
+  async webSocketClose(ws: WebSocket, _code: number, _reason: string, _wasClean: boolean) {
     ws.deserializeAttachment()
     const meta = ws.deserializeAttachment()
     if (meta) {
@@ -223,7 +234,33 @@ export class Hbbs extends DurableObject {
   }
 
   handleRelayResponse(res: rendezvous.RelayResponse, _socket: WebSocket) {
-    console.log(`Handling relay response: ${res.version}`)
+    const { reqSocket, fallbackRelayUrl } = this.relayRequests.get(res.uuid) || {}
+    console.log(`Handling relay response: ${res.uuid}`, reqSocket ? 'found request socket' : 'no request socket')
+    if (reqSocket) {
+      if (res.relayServer.startsWith('webrtc://') || res.version?.startsWith('webrtc://')) {
+        this.sendRendezvous({
+          relayResponse: res
+        }, reqSocket)
+      } else {
+        res.relayServer = fallbackRelayUrl || ''
+        this.sendRendezvous({
+          relayResponse: res
+        }, reqSocket)
+      }
+      this.relayRequests.delete(res.uuid)
+    }
+  }
+
+  _generateRandom128bit(): Uint8Array {
+    // fake ip address for rustdesk relay request
+    const random64 = crypto.getRandomValues(new Uint8Array(8))
+    const random64Next = crypto.getRandomValues(new Uint8Array(8))
+    const last32bit = new Uint8Array(4).fill(0)
+    const random128bit = new Uint8Array(16)
+    random128bit.set(random64, 0)
+    random128bit.set(random64Next, 8)
+    random128bit.set(last32bit, 12)
+    return random128bit
   }
 
   handlePunchHoleRequest(req: rendezvous.PunchHoleRequest, socket: WebSocket) {
@@ -249,36 +286,44 @@ export class Hbbs extends DurableObject {
     }
     // generate random 128 bit for socket address
     // fix issue with rustdesk skip duplicate relay request messages from 0.0.0.0:0
-    const random64 = crypto.getRandomValues(new Uint8Array(8))
-    const random64Next = crypto.getRandomValues(new Uint8Array(8))
-    const last32bit = new Uint8Array(4).fill(0)
-    const random128bit = new Uint8Array(16)
-    random128bit.set(random64, 0)
-    random128bit.set(random64Next, 8)
-    random128bit.set(last32bit, 12)
+    // TODO use cf real ip
+    const random128bit = this._generateRandom128bit()
+    const webrtcEndpiont = req.version?.startsWith('webrtc://') ? req.version : null
+    const baseUrl = (this.env as { HBBS_RELAY_URL?: string }).HBBS_RELAY_URL || 'ws://localhost'
+    const uuid = crypto.randomUUID()
 
-    const relayUrl = (this.env as { HBBS_RELAY_URL?: string }).HBBS_RELAY_URL || 'ws://localhost'
-    // const uuid = crypto.randomUUID()
+    // requester does not support webrtc, send relay response directly
     // pre-warm DO, make sure both side connect to the same region's DO, reduce connection time
-    const hbbrObjId = this.env.HBBR.newUniqueId()
-    this.env.HBBR.get(hbbrObjId).warmup()
-    const uuid = hbbrObjId.toString()
+    const HBBR_DO = (this.env as { HBBR: DurableObjectNamespace<Hbbr> }).HBBR
+    const hbbrObjId = HBBR_DO.newUniqueId()
+    HBBR_DO.get(hbbrObjId).warmup(uuid)
+    const fallbackRelayUrl = `${baseUrl}/ws/relay/${hbbrObjId.toString()}`
 
+    if (!webrtcEndpiont) {
+      this.sendRendezvous({
+        relayResponse: rendezvous.RelayResponse.create({
+          uuid: uuid,
+          relayServer: fallbackRelayUrl,
+          version: '1.4.3',
+        })
+      }, socket)
+    } else {
+      // requester support webrtc, save the request for later relay response
+      this.relayRequests.set(uuid, {
+        reqSocket: socket,
+        fallbackRelayUrl: fallbackRelayUrl,
+      })
+    }
+
+    // send relay request to target
     this.sendRendezvous({
       requestRelay: rendezvous.RequestRelay.create({
         socketAddr: random128bit,
         id: targetId,
         uuid: uuid,
-        relayServer: `${relayUrl}/ws/relay/${uuid}`,
+        relayServer: webrtcEndpiont || fallbackRelayUrl,
       })
     }, onlineSession.socket)
-    this.sendRendezvous({
-      relayResponse: rendezvous.RelayResponse.create({
-        uuid: uuid,
-        relayServer: `${relayUrl}/ws/relay/${uuid}`,
-        version: '1.4.3',
-      })
-    }, socket)
   }
 
   handleRegisterPk(req: rendezvous.RegisterPk, socket: WebSocket) {
