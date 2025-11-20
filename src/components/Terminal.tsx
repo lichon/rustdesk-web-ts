@@ -240,7 +240,7 @@ const setLocalConfig = (key: string, value: string): boolean => {
 const helloMessage = (term: Terminal) => {
   term.writeln('Welcome to the RustDesk terminal!')
   term.writeln('Type "help" or "h" for a list of available commands.')
-  term.writeln(`Current backend URL: ${getDefaultUrl()}\n`)
+  term.writeln(`Backend URL: ${getDefaultUrl()} use webrtc : ${getLocalConfig('webrtc')}\n`)
   term.write('> ')
 }
 
