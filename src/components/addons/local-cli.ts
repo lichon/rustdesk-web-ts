@@ -3,6 +3,7 @@ import { type ITerminalAddon, Terminal } from '@xterm/xterm'
 export class LocalCliAddon implements ITerminalAddon {
   private term!: Terminal
   private currentLine: string = ''
+  private cursorPos: number = 0
   private startOfLine: string = '> '
   private commandHandlers: Record<string, (args: string[]) => void> = {}
 
@@ -21,9 +22,8 @@ export class LocalCliAddon implements ITerminalAddon {
     return this.currentLine
   }
 
-  defaultCommandHandler = (args: string[]) => {
-    if (args.length > 0)
-      this.term.writeln(`Command not found: ${args[0]}`)
+  defaultCommandHandler = (_cmd: string, _args: string[]) => {
+    // this.term.writeln(`Command not found: ${cmd}`)
     this._writeLineStart()
   }
 
@@ -42,33 +42,148 @@ export class LocalCliAddon implements ITerminalAddon {
 
   processCommand = (line: string) => {
     const [command, ...args] = line.trim().split(' ')
-    const handler = this.commandHandlers[command] || this.defaultCommandHandler
-    handler(args)
+    const handler = this.commandHandlers[command]
+    // eslint-disable-next-line
+    handler ? handler(args) : this.defaultCommandHandler(command, args)
   }
 
-  handleTermInput = (data: string) => {
-    if (data.length !== 1) {
+  handleOtherInput = (data: string) => {
+    // Handle ANSI escape sequences
+    // data len > 1
+    if (!data || data[0] != '\u001b') {
+      // unknown input, ignore
+      console.log(`Unknown input: ${JSON.stringify(data)}`)
       return
     }
 
-    const currentLine = this.currentLine
-    const char = data
+    switch (data.substring(1)) {
+      case "[A": // Up arrow
+        // TODO: history
+        break;
+      case "[B": // Down arrow
+        // TODO: history
+        break;
+      case "[D": // Left Arrow
+        if (this.cursorPos > 0) {
+          this.term.write(data)
+          this.cursorPos--
+        }
+        break;
+      case "[C": // Right Arrow
+        if (this.cursorPos < this.currentLine.length) {
+          this.term.write(data)
+          this.cursorPos++
+        }
+        break;
+      case "[3~": // Delete
+        if (this.cursorPos < this.currentLine.length) {
+          const right = this.currentLine.slice(this.cursorPos + 1)
+          this.term.write(right + ' ' + '\b'.repeat(right.length + 1))
+          this.currentLine = this.currentLine.slice(0, this.cursorPos) + right
+        }
+        break;
+      case "[F": // End
+        if (this.cursorPos < this.currentLine.length) {
+          const move = this.currentLine.length - this.cursorPos
+          this.term.write(`\u001b[${move}C`)
+          this.cursorPos = this.currentLine.length
+        }
+        break;
+      case "[H": // Home
+        if (this.cursorPos > 0) {
+          this.term.write(`\u001b[${this.cursorPos}D`)
+          this.cursorPos = 0
+        }
+        break;
+      default:
+        console.log(`Unhandled ANSI sequence: ${JSON.stringify(data)}`);
+    }
+  }
+
+  handleCtrlInput = (char: string) => {
+    switch (char) {
+      case '\u0001': // Ctrl+A
+        if (this.cursorPos > 0) {
+          this.term.write(`\u001b[${this.cursorPos}D`)
+          this.cursorPos = 0
+        }
+        break
+      case '\u0005': // Ctrl+E
+        if (this.cursorPos < this.currentLine.length) {
+          const move = this.currentLine.length - this.cursorPos
+          this.term.write(`\u001b[${move}C`)
+          this.cursorPos = this.currentLine.length
+        }
+        break
+      case '\u0015': // Ctrl+U
+        if (this.cursorPos > 0) {
+          const right = this.currentLine.slice(this.cursorPos)
+          this.term.write('\b'.repeat(this.cursorPos) + right)
+          this.term.write(' '.repeat(this.cursorPos))
+          this.term.write('\b'.repeat(this.currentLine.length))
+          this.currentLine = right
+          this.cursorPos = 0
+        }
+        break
+      case '\u000b': // Ctrl+K
+        if (this.cursorPos < this.currentLine.length) {
+          const right = this.currentLine.slice(this.cursorPos)
+          this.term.write(' '.repeat(right.length))
+          this.term.write('\b'.repeat(right.length))
+          this.currentLine = this.currentLine.slice(0, this.cursorPos)
+        }
+        break
+      default:
+        break
+    }
+  }
+
+  handleSingleCharInput = (char: string) => {
+    const charCode = char.charCodeAt(0)
     if (char === '\r') { // Enter
       this.term.writeln('')
-      if (currentLine.trim()) {
-        this.processCommand(currentLine)
+      if (this.currentLine.trim()) {
+        this.processCommand(this.currentLine)
       } else {
         this._writeLineStart()
       }
       this.currentLine = ''
+      this.cursorPos = 0
     } else if (char === '\u007f') { // Backspace
-      if (currentLine.length > 0) {
-        this.term.write('\b \b')
-        this.currentLine = currentLine.slice(0, -1)
+      if (this.cursorPos > 0) {
+        const left = this.currentLine.slice(0, this.cursorPos - 1)
+        const right = this.currentLine.slice(this.cursorPos)
+        this.term.write('\b' + right + ' ' + '\b'.repeat(right.length + 1))
+        this.currentLine = left + right
+        this.cursorPos--
       }
+    } else if (char === '\u0003') { // Ctrl+C
+      this.term.write('^C\n')
+      this._writeLineStart()
+      this.currentLine = ''
+      this.cursorPos = 0
+    } else if (charCode >= '\u0000'.charCodeAt(0) && charCode <= '\u001f'.charCodeAt(0)) {
+      this.handleCtrlInput(char)
     } else {
-      this.term.write(char)
-      this.currentLine += char
+      const left = this.currentLine.slice(0, this.cursorPos)
+      const right = this.currentLine.slice(this.cursorPos)
+      this.term.write(char + right + '\b'.repeat(right.length))
+      this.currentLine = left + char + right
+      this.cursorPos++
+    }
+  }
+
+  handleTermInput = (data: string) => {
+    if (data.length === 1) {
+      this.handleSingleCharInput(data)
+      return
+    }
+    // paste?
+    if (data[0] !== '\u001b') {
+      const normData = data.replace(/[\r\n]+/g, "\r")
+      Array.from(normData).forEach(c => this.handleSingleCharInput(c));
+    } else {
+      this.handleOtherInput(data)
     }
   }
 }
