@@ -6,6 +6,7 @@ import type { TTYConfig, TTYOpen } from '../types/tty-types'
 import { Zstd } from "@hpcc-js/wasm-zstd";
 
 let DEBUG_CONFIG = false
+const MSG_CHUNK_SIZE = 46 * 1024
 
 const DEFAULT_STUN_SERVER: RTCIceServer = {
   urls: [
@@ -17,6 +18,10 @@ const DEFAULT_STUN_SERVER: RTCIceServer = {
 
 function getDebug(): boolean {
   return localStorage.getItem('debug') === 'true' || false
+}
+
+function getMyId(): string {
+  return localStorage.getItem('my-id') || 'web'
 }
 
 function getTurnUrl(): URL | null {
@@ -147,9 +152,8 @@ class RustSessionImpl implements RustSession {
   send(data: string | Uint8Array): void {
     const dataBytes = data instanceof Uint8Array ? data : new TextEncoder().encode(data)
     // packet size limit 48K, chunking 46K for RustDesk
-    const CHUNK_SIZE = 46 * 1024
-    for (let i = 0; i < dataBytes.length; i += CHUNK_SIZE) {
-      const chunk = dataBytes.slice(i, i + CHUNK_SIZE)
+    for (let i = 0; i < dataBytes.length; i += MSG_CHUNK_SIZE) {
+      const chunk = dataBytes.slice(i, i + MSG_CHUNK_SIZE)
       sendSocketMsg({
         terminalAction: deskMsg.TerminalAction.create({
           union: {
@@ -174,6 +178,7 @@ class RustSessionImpl implements RustSession {
       socket = this.socket = new WebSocket(relayUrl)
       socket.binaryType = 'arraybuffer'
     }
+    const myId = getMyId()
     const sessionId = this.sessionId = BigInt(Date.now())
 
     const handleChallenge = async ({ salt, challenge }: { salt: string, challenge: string }) => {
@@ -251,8 +256,8 @@ class RustSessionImpl implements RustSession {
       sendSocketMsg({
         loginRequest: deskMsg.LoginRequest.create({
           username: this.targetId,
-          myId: 'web',
-          myName: 'web',
+          myId: myId,
+          myName: myId,
           myPlatform: 'web',
           version: '1.4.4',
           union: {
@@ -287,8 +292,8 @@ class RustSessionImpl implements RustSession {
             sendSocketMsg({
               loginRequest: deskMsg.LoginRequest.create({
                 username: this.targetId,
-                myId: 'web',
-                myName: 'web',
+                myId: myId,
+                myName: myId,
                 myPlatform: 'web',
                 version: '1.4.4',
                 password: new Uint8Array(hashedChallenge),

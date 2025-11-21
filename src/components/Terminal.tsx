@@ -10,6 +10,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import { OverlayAddon } from './addons/overlay'
 import { ZmodemAddon } from './addons/zmodem'
+import { LocalCliAddon } from './addons/local-cli'
 import useTTY from '../hooks/use-tty'
 import useRustDesk from '../hooks/use-rustdesk'
 
@@ -108,6 +109,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
     const term = new Terminal({
       allowProposedApi: true,
       cursorBlink: true,
+      convertEol: true,
       fontSize: 14,
       lineHeight: 1.4,
       fontFamily: 'Lucida Console, "Courier New", monospace',
@@ -119,104 +121,84 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
     })
     termRef.current = term
 
-    let currentLine = ''
-    const processCommand = (line: string) => {
-      const [command, ...args] = line.trim().split(' ')
-      switch (command) {
-        case 'h':
-        case 'help':
-          helpMessage(term)
-          break
-        case 'r':
-        case 'reload':
-          window.location.reload()
-          break
-        case 'c':
-        case 'connect':
-          term.writeln(`Connecting to ${wsUrl}..., enable webrtc: ${getLocalConfig('webrtc')}`)
-          openSocket({
-            useWebRTC: getLocalConfig('webrtc') === 'true',
-            cols: fit.proposeDimensions()?.cols || 80,
-            rows: fit.proposeDimensions()?.rows || 24,
-            targetId: args[0]
-          }).catch((err) => {
-            term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
-            term.write('> ')
-          })
-          break
-        case 'config':
-          handleConfigCommand(term, args).then(([key, value]) => {
-            key === 'url' && setWsUrl(value) // eslint-disable-line
-          }).catch(() => { /* ignore */ })
-          break
-        case 'clear':
-          term.clear()
-          term.write('> ')
-          break
-        default:
-          term.write('> ')
-          break
+    const localCli = new LocalCliAddon()
+    term.loadAddon(localCli)
+    localCli.registerCommandHandler(['help', 'h'], () => helpMessage(term))
+    localCli.registerCommandHandler(['reload', 'r'], () => window.location.reload())
+    localCli.registerCommandHandler(['connect', 'c'], (args) => {
+      const targetId = args[0]
+      if (!targetId) {
+        term.writeln('Usage: connect <targetId>')
+        return
       }
-    }
+      term.writeln(`Connecting to ${wsUrl}..., enable webrtc: ${getLocalConfig('webrtc')}`)
+      openSocket({
+        useWebRTC: getLocalConfig('webrtc') === 'true',
+        cols: term.cols,
+        rows: term.rows,
+        targetId
+      }).catch((err) => {
+        term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
+        term.write('> ')
+      })
+    })
+    localCli.registerCommandHandler(['config'], (args) => {
+      handleConfigCommand(term, args).then(([key, value]) => {
+        key === 'url' && setWsUrl(value) // eslint-disable-line
+      }).catch(() => { /* ignore */ })
+    })
+    localCli.registerCommandHandler(['clear'], () => {
+      term.clear()
+      term.write('> ')
+    })
 
     term.onData((data: string) => {
       if (ttyConnected.current) {
         sendUserInput(data)
-        return
-      }
-      const char = data
-      if (char === '\r') { // Enter
-        term.writeln('')
-        if (currentLine.trim()) {
-          processCommand(currentLine)
-        } else {
-          term.write('> ')
-        }
-        currentLine = ''
-      } else if (char === '\u007f') { // Backspace
-        if (currentLine.length > 0) {
-          term.write('\b \b')
-          currentLine = currentLine.slice(0, -1)
-        }
       } else {
-        currentLine += char
-        term.write(char)
+        localCli.handleTermInput(data)
       }
     })
 
     loadAddons(term)
-    // fit addon
-    const fit = new FitAddon()
-    term.loadAddon(fit)
-    const onWindowResize = () => {
-      try {
-        // TODO sendUserInput resize event to backend
-      } catch { /* ignore */ }
-      try { fit.fit() } catch { /* ignore */ }
-    }
-    const ro = new ResizeObserver(() => {
-      onWindowResize()
-    })
-    ro.observe(containerRef.current!)
-
     // open the terminal
     term.open(containerRef.current!)
+    // auto focus
     term.focus()
     // load zmodem addon after terminal is opened
     zmodemRef.current = loadZmodemAddon(term, sendUserInput)
-    window.addEventListener('resize', onWindowResize)
+    // resize observer
+    const { ro, resize } = registerResizeObserver(term, containerRef.current!)
 
     helloMessage(term)
 
     return () => {
       closeSocket()
-      ro.disconnect()
+      unregisterResizeObserver(ro, resize)
       term.dispose()
-      window.removeEventListener('resize', onWindowResize)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={containerRef} className='h-screen bg-gray-900' />
+}
+
+function registerResizeObserver(term: Terminal, container: HTMLDivElement) {
+  const fitAddon = new FitAddon()
+  const resize = () => {
+    try { fitAddon.fit() } catch { /* ignore */ }
+  }
+  term.loadAddon(fitAddon)
+  const ro = new ResizeObserver(() => {
+    resize()
+  })
+  ro.observe(container)
+  window.addEventListener('resize', resize)
+  return { ro, resize }
+}
+
+function unregisterResizeObserver(ro: ResizeObserver, onWindowResize: () => void) {
+  ro.disconnect()
+  window.removeEventListener('resize', onWindowResize)
 }
 
 function loadAddons(term: Terminal) {
