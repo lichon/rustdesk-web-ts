@@ -21,8 +21,8 @@ const CONFIG_KEYS = [
   'webrtc', // boolean enable webrtc
   'turn-url', // string turn server url, turn://user:pass@host:port
   'turn-only', // boolean use only turn server
-  'trzsz', // boolean enable trzsz file transfer
-  'zmodem' // boolean enable zmodem file transfer
+  'trzsz', // boolean enable trzsz file transfer, max upload buffer 47K, RustDesk packet limit is 48K
+  'zmodem' // boolean enable zmodem file transfer, kinda experimental
 ]
 
 function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: string) => void }) {

@@ -146,6 +146,7 @@ class RustSessionImpl implements RustSession {
 
   send(data: string | Uint8Array): void {
     const dataBytes = data instanceof Uint8Array ? data : new TextEncoder().encode(data)
+    // TODO packet size limit and chunking 48K for RustDesk
     sendSocketMsg({
       terminalAction: deskMsg.TerminalAction.create({
         union: {
