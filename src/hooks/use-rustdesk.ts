@@ -16,21 +16,25 @@ const DEFAULT_STUN_SERVER: RTCIceServer = {
   ]
 }
 
-function getDebug(): boolean {
-  return localStorage.getItem('debug') === 'true' || false
+function getDebug(config: Record<string, unknown>): boolean {
+  return config.debug === 'true' || false
 }
 
-function getMyId(): string {
-  return localStorage.getItem('my-id') || 'web'
+function isWebrtcEnabled(config: Record<string, unknown>): boolean {
+  return config.webrtc === 'true' || false
 }
 
-function getTurnUrl(): URL | null {
-  const turnUrl = localStorage.getItem('turn-url')
+function getMyId(config: Record<string, unknown>): string {
+  return config['my-id']?.toString() || 'web'
+}
+
+function getTurnUrl(config: Record<string, unknown>): URL | null {
+  const turnUrl = config['turn-url']?.toString()
   return turnUrl ? new URL(turnUrl) : null
 }
 
-function getTurnOnly(): boolean {
-  return localStorage.getItem('turn-only') ? true : false
+function getTurnOnly(config: Record<string, unknown>): boolean {
+  return config['turn-only'] ? true : false
 }
 
 type RustSession = {
@@ -43,10 +47,12 @@ type RustSession = {
   isOpen(): boolean
   close(notify?: (reason?: string) => void): void
   send(data: string | Uint8Array): void
+  sendRaw(dataObj: object): void
 }
 
 class RustSessionImpl implements RustSession {
   targetId: string
+  config: Record<string, unknown>
   relayUrl?: string
   socket?: WebSocket | RTCDataChannel
   serviceId?: string
@@ -57,8 +63,9 @@ class RustSessionImpl implements RustSession {
   pc?: RTCPeerConnection
   dc?: RTCDataChannel
 
-  constructor(targetId: string) {
+  constructor(targetId: string, config: Record<string, unknown> = {}) {
     this.targetId = targetId
+    this.config = config
   }
 
   getRemoteOfferFromWebrtcUrl(url: string): RTCSessionDescriptionInit | undefined {
@@ -89,10 +96,10 @@ class RustSessionImpl implements RustSession {
       this.pc.close()
     }
     const iceServers: RTCIceServer[] = [DEFAULT_STUN_SERVER]
-    const turnUrl = getTurnUrl()
+    const turnUrl = getTurnUrl(this.config)
     if (turnUrl) {
       // eslint-disable-next-line
-      getTurnOnly() && iceServers.splice(0, iceServers.length)
+      getTurnOnly(this.config) && iceServers.splice(0, iceServers.length)
       iceServers.push({
         urls: `turn:${turnUrl.host}`,
         username: turnUrl.username,
@@ -101,7 +108,7 @@ class RustSessionImpl implements RustSession {
     }
     const pc = new RTCPeerConnection({
       iceServers: iceServers,
-      iceTransportPolicy: getTurnOnly() ? "relay" : "all"
+      iceTransportPolicy: getTurnOnly(this.config) ? "relay" : "all"
     })
     if (DEBUG_CONFIG) {
       pc.onconnectionstatechange = () => {
@@ -149,6 +156,10 @@ class RustSessionImpl implements RustSession {
     }
   }
 
+  sendRaw(dataObj: object): void {
+    sendSocketMsg(dataObj, this.socket)
+  }
+
   send(data: string | Uint8Array): void {
     const dataBytes = data instanceof Uint8Array ? data : new TextEncoder().encode(data)
     // packet size limit 48K, chunking 46K for RustDesk
@@ -178,7 +189,7 @@ class RustSessionImpl implements RustSession {
       socket = this.socket = new WebSocket(relayUrl)
       socket.binaryType = 'arraybuffer'
     }
-    const myId = getMyId()
+    const myId = getMyId(ttyConfig.config!)
     const sessionId = this.sessionId = BigInt(Date.now())
 
     const handleChallenge = async ({ salt, challenge }: { salt: string, challenge: string }) => {
@@ -352,7 +363,7 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
   }, [])
 
   const open = async (ttyOpen: TTYOpen) => {
-    DEBUG_CONFIG = getDebug()
+    DEBUG_CONFIG = getDebug(ttyConfig.config)
     const targetId = ttyOpen.targetId
     if (!targetId) {
       throw new Error('No target ID provided')
@@ -366,9 +377,12 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
       activeSession.current.close()
       console.warn(`TTY socket on, close existing socket`)
     }
-    const session = activeSession.current = new RustSessionImpl(targetId)
-    if (ttyOpen.useWebRTC) {
+    const session = activeSession.current = new RustSessionImpl(targetId, ttyConfig.config)
+    if (isWebrtcEnabled(ttyConfig.config)) {
       await session.initDataChannel()
+    }
+    if (DEBUG_CONFIG) {
+      (globalThis as unknown as { terminal: RustSessionImpl }).terminal = session
     }
 
     try {
@@ -418,7 +432,11 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
     activeSession.current?.close()
   }
 
-  return { open, close, send }
+  const sendRaw = (dataObj: object) => {
+    activeSession.current?.sendRaw(dataObj)
+  }
+
+  return { open, close, send, sendRaw }
 }
 
 const sendRendezvousRequest = (serverUrl: string, data: unknown, timeoutMs: number = 30000) => {

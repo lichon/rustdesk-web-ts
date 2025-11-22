@@ -1,5 +1,6 @@
 type TTYConfig = {
   url: string
+  config: Record<string, unknown>,
   onAuthRequired: () => Promise<string>
   onSocketOpen?: () => void
   onSocketClose?: (reason?: string) => void
@@ -10,7 +11,6 @@ type TTYOpen = {
   cols: number
   rows: number
   targetId?: string
-  useWebRTC?: boolean
 }
 
 export type { TTYConfig, TTYOpen }

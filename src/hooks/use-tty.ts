@@ -26,7 +26,8 @@ const useTTY = (ttyConfig: TTYConfig) => {
       ttySocket.current?.close()
       console.warn(`TTY socket was ${ttySocket.current?.readyState}, closing existing socket`)
     }
-    const socket = new WebSocket(`${ttyConfig.url}`, 'tty')
+    const wsUrl = ttyConfig.url.replace('ttyd://', 'ws://').replace('ttyds://', 'wss://')
+    const socket = new WebSocket(wsUrl, 'tty')
     ttySocket.current = socket
     console.log('new tty socket', socket)
 
@@ -51,7 +52,7 @@ const useTTY = (ttyConfig: TTYConfig) => {
       const msgType = bytes.at(0)
       switch (msgType) {
         case ServerCommand.OUTPUT.charCodeAt(0):
-          ttyConfig.onSocketData(bytes.slice(1), arrayBuffer)
+          ttyConfig.onSocketData(bytes.slice(1))
           break
         case ServerCommand.SET_WINDOW_TITLE.charCodeAt(0):
           console.log('set title:', textDecoder.decode(bytes.slice(1)))
@@ -94,7 +95,10 @@ const useTTY = (ttyConfig: TTYConfig) => {
     ttySocket.current?.close()
   }
 
-  return { open, close, send }
+  const sendRaw = async (_dataObj: object) => {
+  }
+
+  return { open, close, send, sendRaw }
 }
 
 export default useTTY

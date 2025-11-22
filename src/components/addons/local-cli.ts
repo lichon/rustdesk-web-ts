@@ -179,7 +179,7 @@ export class LocalCliAddon implements ITerminalAddon {
       return
     }
     // paste?
-    if (data[0] !== '\u001b') {
+    if (data.length > 3 && data[0] !== '\u001b') {
       const normData = data.replace(/[\r\n]+/g, "\r")
       Array.from(normData).forEach(c => this.handleSingleCharInput(c));
     } else {

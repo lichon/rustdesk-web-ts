@@ -13,16 +13,18 @@ import { ZmodemAddon } from './addons/zmodem'
 import { LocalCliAddon } from './addons/local-cli'
 import useTTY from '../hooks/use-tty'
 import useRustDesk from '../hooks/use-rustdesk'
+import type { TTYConfig } from '../types/tty-types'
 
 const { VITE_DEFAULT_TTY_URL } = import.meta.env
 const TEXT_DECODER = new TextDecoder()
 const CONFIG_KEYS = [
   'debug', // boolean enable message debug logging
   'url', // string backend url
+  'my-id', // string my rustdesk id, display on remote side
   'webrtc', // boolean enable webrtc
   'turn-url', // string turn server url, turn://user:pass@host:port
   'turn-only', // boolean use only turn server
-  'trzsz', // boolean enable trzsz file transfer, max upload buffer 47K, RustDesk packet limit is 48K
+  'trzsz', // boolean enable trzsz file transfer, trs tsz cmd
   'zmodem' // boolean enable zmodem file transfer, kinda experimental
 ]
 
@@ -33,9 +35,9 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
   const ttyConnected = useRef<boolean>(false)
   const isRustDesk = !isTTYdUrl(wsUrl)
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { open: openSocket, send: sendUserInput, close: closeSocket } = isRustDesk ? useRustDesk({
+  const ttyConfig: TTYConfig = {
     url: wsUrl,
+    config: localStorage,
     onSocketData: (data: Uint8Array) => {
       if (zmodemRef.current)
         zmodemRef.current.consume(data.slice(0).buffer)
@@ -44,63 +46,24 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
       }
     },
     onSocketOpen: () => {
-      console.log('TTYd socket opened')
       ttyConnected.current = true
       termRef.current!.options.disableStdin = false
     },
-    onSocketClose(reason) {
+    onSocketClose(reason?: string) {
       ttyConnected.current = false
       termRef.current!.options.disableStdin = false
       termRef.current?.writeln(`\n\x1b[31mConnection closed. ${reason}\x1b[0m\n`)
       termRef.current?.write('> ')
     },
-    onAuthRequired: async () => {
-      // prompt the user for a password
-      termRef.current?.writeln('Authentication required. input password:')
-      termRef.current!.options.disableStdin = true
-      return new Promise<string>((resolve) => {
-        let password = ''
-        let listener: IDisposable | undefined = undefined
-        listener = termRef.current?.onKey((ev) => {
-          if (ev.key === '\r') {
-            listener?.dispose()
-            resolve(password)
-            setTimeout(() => {
-              termRef.current!.options.disableStdin = false
-            })
-          } else if (ev.key === '\u007f') { // Backspace
-            if (password.length > 0) {
-              password = password.slice(0, -1)
-            }
-          } else if (ev.key.length === 1) {
-            password += ev.key
-          }
-        })
-      })
-    }
-  }) : useTTY({ // eslint-disable-line react-hooks/rules-of-hooks
-    url: wsUrl.replace('ttyd://', 'ws://').replace('ttyds://', 'wss://'),
-    onSocketData: (data: Uint8Array, buffer?: ArrayBuffer) => {
-      if (zmodemRef.current && buffer)
-        zmodemRef.current.consume(buffer?.slice(1))
-      else {
-        termRef.current?.write(TEXT_DECODER.decode(data))
-      }
-    },
-    onSocketOpen: () => {
-      console.log('TTYd socket opened')
-      ttyConnected.current = true
-    },
-    onSocketClose(reason) {
-      ttyConnected.current = false
-      termRef.current?.writeln(`\n\x1b[31mConnection closed. ${reason}\x1b[0m\n`)
-      termRef.current?.write('> ')
-    },
-    onAuthRequired: async () => {
-      // TODO implement auth for ttyd
-      return Promise.resolve('')
-    }
-  })
+    onAuthRequired: async () => handleSecretInput(termRef.current!)
+  }
+
+  const {
+    open: openSocket,
+    close: closeSocket,
+    send: sendUserInput,
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+  } = isRustDesk ? useRustDesk(ttyConfig) : useTTY(ttyConfig)
 
   useEffect(() => {
     console.log('TerminalInner mounted with wsUrl:', wsUrl)
@@ -133,7 +96,6 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
       }
       term.writeln(`Connecting to ${wsUrl}..., enable webrtc: ${getLocalConfig('webrtc')}`)
       openSocket({
-        useWebRTC: getLocalConfig('webrtc') === 'true',
         cols: term.cols,
         rows: term.rows,
         targetId
@@ -311,6 +273,31 @@ const helpMessage = (term: Terminal) => {
   term.writeln('      clear              - Clear the terminal screen.')
   term.writeln('')
   term.write('> ')
+}
+
+const handleSecretInput = (term: Terminal): Promise<string> => {
+  // prompt the user for a password
+  term.writeln('Authentication required. input password:')
+  term.options.disableStdin = true
+  return new Promise<string>((resolve) => {
+    let secret = ''
+    let listener: IDisposable | undefined = undefined
+    listener = term.onKey((ev) => {
+      if (ev.key === '\r') {
+        listener?.dispose()
+        resolve(secret)
+        setTimeout(() => {
+          term.options.disableStdin = false
+        })
+      } else if (ev.key === '\u007f') { // Backspace
+        if (secret.length > 0) {
+          secret = secret.slice(0, -1)
+        }
+      } else if (ev.key.length === 1) {
+        secret += ev.key
+      }
+    })
+  })
 }
 
 const handleConfigCommand = async (term: Terminal, args: string[]) => {
