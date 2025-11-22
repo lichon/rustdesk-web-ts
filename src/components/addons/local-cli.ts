@@ -6,8 +6,20 @@ export class LocalCliAddon implements ITerminalAddon {
   private cursorPos: number = 0
   private startOfLine: string = '> '
   private commandHandlers: Record<string, (args: string[]) => void> = {}
+  private commandHistory: string[] = []
+  private historyCursor: number = 0
+  private historySize: number;
 
-  constructor() {
+  constructor(
+    {
+      historySize = 100,
+      startOfLine = undefined
+    }: {
+      historySize?: number,
+      startOfLine?: string
+    } = {}) {
+    this.historySize = historySize
+    this.startOfLine = startOfLine || '> '
   }
 
   activate(terminal: Terminal): void {
@@ -47,6 +59,18 @@ export class LocalCliAddon implements ITerminalAddon {
     handler ? handler(args) : this.defaultCommandHandler(command, args)
   }
 
+  private _clearLine() {
+    this.term.write('\r' + this.startOfLine + ' '.repeat(this.currentLine.length))
+    this.term.write('\r' + this.startOfLine)
+  }
+
+  private _showHistory() {
+    this._clearLine()
+    this.currentLine = this.commandHistory[this.historyCursor] || ''
+    this.term.write(this.currentLine)
+    this.cursorPos = this.currentLine.length
+  }
+
   handleOtherInput = (data: string) => {
     // Handle ANSI escape sequences
     // data len > 1
@@ -58,10 +82,16 @@ export class LocalCliAddon implements ITerminalAddon {
 
     switch (data.substring(1)) {
       case "[A": // Up arrow
-        // TODO: history
+        if (this.historyCursor > 0) {
+          this.historyCursor--
+          this._showHistory()
+        }
         break;
       case "[B": // Down arrow
-        // TODO: history
+        if (this.historyCursor < this.commandHistory.length) {
+          this.historyCursor++
+          this._showHistory()
+        }
         break;
       case "[D": // Left Arrow
         if (this.cursorPos > 0) {
@@ -143,12 +173,19 @@ export class LocalCliAddon implements ITerminalAddon {
     if (char === '\r') { // Enter
       this.term.writeln('')
       if (this.currentLine.trim()) {
+        if (this.commandHistory.at(-1) !== this.currentLine) {
+          this.commandHistory.push(this.currentLine)
+          if (this.commandHistory.length > this.historySize) {
+            this.commandHistory.shift()
+          }
+        }
         this.processCommand(this.currentLine)
       } else {
         this._writeLineStart()
       }
       this.currentLine = ''
       this.cursorPos = 0
+      this.historyCursor = this.commandHistory.length
     } else if (char === '\u007f') { // Backspace
       if (this.cursorPos > 0) {
         const left = this.currentLine.slice(0, this.cursorPos - 1)
@@ -170,6 +207,7 @@ export class LocalCliAddon implements ITerminalAddon {
       this.term.write(char + right + '\b'.repeat(right.length))
       this.currentLine = left + char + right
       this.cursorPos++
+      this.historyCursor = this.commandHistory.length
     }
   }
 
