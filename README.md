@@ -1,6 +1,6 @@
 # RustDesk Web Client (TypeScript)
 
-This is a web-based client for RustDesk, written in TypeScript and built with React. It allows you to connect to and control remote devices directly from your web browser.
+This is a web-based client for RustDesk, It allows you to connect to and control remote devices directly from your web browser.
 
 ## Features
 
@@ -11,6 +11,8 @@ This is a web-based client for RustDesk, written in TypeScript and built with Re
 *   **Modern Tech Stack:** Utilizes React, Vite, and TypeScript for a fast and reliable development experience.
 *   **Deployable on the Edge:** Designed to be deployed to Cloudflare Workers.
 *   **Built-in rustdesk server:** rustdesk hbbs with websocket relay supported.
+
+![](https://github.com/lichon/rustdesk-web-ts/blob/main/public/ssc.gif)
 
 ## Getting Started
 
