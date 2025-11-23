@@ -195,9 +195,13 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     term.clear()
     term.write('> ')
   })
-  localCli.registerCommandHandler(['ssc'], () => {
-    term.options.disableStdin = true
+  localCli.registerCommandHandler(['ssc'], (args) => {
     const ssRef = (innerRef as { ssRef: React.RefObject<ScreenShareAddon | null> }).ssRef
+    if (args.length > 0) {
+      ssRef.current?.dispose()
+      return
+    }
+    term.options.disableStdin = true
     ssRef.current?.requestDataChannel().then(cmd => {
       tty.send(`${cmd}\r`)
     }).finally(() => {

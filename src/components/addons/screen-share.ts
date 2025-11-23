@@ -27,7 +27,7 @@ export class ScreenShareAddon implements ITerminalAddon {
     this.video.className =
       'rounded-[15px] absolute top-1/2 left-1/2 ' +
       '-translate-x-1/2 -translate-y-1/2 ' +
-      'w-[80%] h-[80%] bg-black'
+      'h-[80%] aspect-video bg-black'
     this.video.autoplay = true
     this.video.muted = true
     this.video.playsInline = true
@@ -76,6 +76,7 @@ export class ScreenShareAddon implements ITerminalAddon {
       mediaPc.setRemoteDescription(new RTCSessionDescription(ans))
     }
     dc.onclose = () => {
+      mediaPc?.close()
       this.dispose()
     }
 
@@ -91,7 +92,7 @@ export class ScreenShareAddon implements ITerminalAddon {
       setTimeout(resolve, 1000)
     })
     const offer = pc.localDescription?.sdp
-    return './screen-share-cli -o ' + btoa(offer || '')
+    return './screen-share-cli --hide -o ' + btoa(offer || '')
   }
 
   async _requestScreenShare() {
