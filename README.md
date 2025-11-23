@@ -1,4 +1,4 @@
-# RustDesk Web Client (TypeScript)
+# RustDesk Web Client
 
 This is a web-based client for RustDesk, It allows you to connect to and control remote devices directly from your web browser.
 
