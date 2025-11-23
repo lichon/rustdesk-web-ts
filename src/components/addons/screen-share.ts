@@ -42,7 +42,7 @@ export class ScreenShareAddon implements ITerminalAddon {
     this.video.remove()
   }
 
-  async requestDataChannel() {
+  async requestDataChannel(args: string[]): Promise<string> {
     if (this.pc) {
       this.pc.close()
     }
@@ -92,7 +92,7 @@ export class ScreenShareAddon implements ITerminalAddon {
       setTimeout(resolve, 1000)
     })
     const offer = pc.localDescription?.sdp
-    return './screen-share-cli --hide -o ' + btoa(offer || '')
+    return `./screen-share-cli ${args.join(' ')} -o ` + btoa(offer || '')
   }
 
   async _requestScreenShare() {

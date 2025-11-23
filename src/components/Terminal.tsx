@@ -71,7 +71,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
   }
 
   // eslint-disable-next-line
-  const ttyActions: TTY = isRustDesk ? useRustDesk(ttyConfig) : useTTYD(ttyConfig)
+  const tty: TTY = isRustDesk ? useRustDesk(ttyConfig) : useTTYD(ttyConfig)
 
   useEffect(() => {
     console.log('TerminalInner mounted with wsUrl:', wsUrl)
@@ -92,13 +92,13 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
     })
     termRef.current = term
 
-    const cli = loadLocalCli(term, ttyActions, innerRef)
+    const cli = loadLocalCli(term, tty, innerRef)
     loadScreenShare(term, ssRef)
     loadAddons(term)
 
     term.onData((data: string) => {
       if (ttyConnected.current) {
-        ttyActions.send(data)
+        tty.send(data)
         cli.handleConnectedInput(data)
       } else {
         cli.handleTermInput(data)
@@ -110,14 +110,14 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
     // auto focus
     term.focus()
     // load zmodem addon after terminal is opened
-    zmodemRef.current = loadZmodemAddon(term, ttyActions.send)
+    zmodemRef.current = loadZmodemAddon(term, tty.send)
     // resize observer
     const { ro, resize } = registerResizeObserver(term, containerRef.current!)
 
     helloMessage(term)
 
     return () => {
-      ttyActions.close()
+      tty.close()
       unregisterResizeObserver(ro, resize)
       term.dispose()
     }
@@ -181,6 +181,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
       rows: term.rows,
       targetId
     }).catch((err) => {
+      console.error('Connection error:', err)
       term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
       term.write('> ')
     })
@@ -197,12 +198,12 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
   })
   localCli.registerCommandHandler(['ssc'], (args) => {
     const ssRef = (innerRef as { ssRef: React.RefObject<ScreenShareAddon | null> }).ssRef
-    if (args.length > 0) {
+    if (args.length > 0 && args[0] === 'stop') {
       ssRef.current?.dispose()
       return
     }
     term.options.disableStdin = true
-    ssRef.current?.requestDataChannel().then(cmd => {
+    ssRef.current?.requestDataChannel(args).then(cmd => {
       tty.send(`${cmd}\r`)
     }).finally(() => {
       term.options.disableStdin = false
@@ -292,7 +293,7 @@ const setLocalConfig = (key: string, value: string): boolean => {
 const helloMessage = (term: Terminal) => {
   term.writeln('Welcome to the RustDesk terminal!')
   term.writeln('Type "help" or "h" for a list of available commands.')
-  term.writeln(`Backend URL: ${getDefaultUrl()} use webrtc : ${getLocalConfig('webrtc')}\n`)
+  term.writeln(`Backend URL: ${getDefaultUrl()} webrtc enabled: ${getLocalConfig('webrtc')}\n`)
   term.write('> ')
 }
 

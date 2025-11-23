@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import * as rendezvous from './hbbs-rendezvous'
 import * as deskMsg from './hbbs-message'
 import type { TTYConfig, TTYOpen } from '../types/tty-types'
@@ -132,7 +132,7 @@ class RustSessionImpl implements RustSession {
         }
       }
       // in case icegatheringstatechange doesn't fire
-      setTimeout(resolve, 3000)
+      setTimeout(resolve, 1000)
     })
     this.pc = pc
   }
@@ -358,9 +358,6 @@ class RustSessionImpl implements RustSession {
 const useRustDesk = (ttyConfig: TTYConfig) => {
   const activeSession = useRef<RustSession | null>(undefined)
   const currentRequest = useRef<TTYOpen | undefined>(undefined)
-
-  useEffect(() => {
-  }, [])
 
   const open = async (ttyOpen: TTYOpen) => {
     DEBUG_CONFIG = getDebug(ttyConfig.config)
