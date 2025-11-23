@@ -37,7 +37,7 @@ export class ZmodemAddon implements ITerminalAddon {
     this.disposables.length = 0
   }
 
-  consume(data: ArrayBuffer) {
+  consume(data: Uint8Array) {
     try {
       if (this.options.trzsz) {
         this.trzszFilter.processServerOutput(data)

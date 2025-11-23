@@ -132,7 +132,7 @@ class RustSessionImpl implements RustSession {
         }
       }
       // in case icegatheringstatechange doesn't fire
-      setTimeout(resolve, 6000)
+      setTimeout(resolve, 3000)
     })
     this.pc = pc
   }

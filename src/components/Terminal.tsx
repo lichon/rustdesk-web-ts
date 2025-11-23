@@ -11,9 +11,11 @@ import '@xterm/xterm/css/xterm.css'
 import { OverlayAddon } from './addons/overlay'
 import { ZmodemAddon } from './addons/zmodem'
 import { LocalCliAddon } from './addons/local-cli'
+import { ScreenShareAddon } from './addons/screen-share'
 import useTTYD from '../hooks/use-ttyd'
 import useRustDesk from '../hooks/use-rustdesk'
-import type { TTYConfig } from '../types/tty-types'
+
+import type { TTYConfig, TTY, FnSetUrl } from '../types/tty-types'
 
 const { VITE_DEFAULT_TTY_URL } = import.meta.env
 const TEXT_DECODER = new TextDecoder()
@@ -28,21 +30,31 @@ const CONFIG_KEYS = [
   'zmodem' // boolean enable zmodem file transfer, kinda experimental
 ]
 
-function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: string) => void }) {
+function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const zmodemRef = useRef<ZmodemAddon | null>(null)
+  const ssRef = useRef<ScreenShareAddon | null>(null)
   const ttyConnected = useRef<boolean>(false)
   const isRustDesk = !isTTYdUrl(wsUrl)
+
+  const innerRef = {
+    wsUrl,
+    setWsUrl,
+    ssRef
+  }
 
   const ttyConfig: TTYConfig = {
     url: wsUrl,
     config: localStorage,
     onSocketData: (data: Uint8Array) => {
       if (zmodemRef.current)
-        zmodemRef.current.consume(data.slice(0).buffer)
+        zmodemRef.current.consume(data)
       else {
         termRef.current?.write(TEXT_DECODER.decode(data))
+      }
+      if (ssRef.current) {
+        ssRef.current.handleTermOutput(data)
       }
     },
     onSocketOpen: () => {
@@ -58,12 +70,8 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
     onAuthRequired: async () => handleSecretInput(termRef.current!)
   }
 
-  const {
-    open: openSocket,
-    close: closeSocket,
-    send: sendUserInput,
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-  } = isRustDesk ? useRustDesk(ttyConfig) : useTTYD(ttyConfig)
+  // eslint-disable-next-line
+  const ttyActions: TTY = isRustDesk ? useRustDesk(ttyConfig) : useTTYD(ttyConfig)
 
   useEffect(() => {
     console.log('TerminalInner mounted with wsUrl:', wsUrl)
@@ -84,58 +92,32 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
     })
     termRef.current = term
 
-    const localCli = new LocalCliAddon()
-    term.loadAddon(localCli)
-    localCli.registerCommandHandler(['help', 'h'], () => helpMessage(term))
-    localCli.registerCommandHandler(['reload', 'r'], () => window.location.reload())
-    localCli.registerCommandHandler(['connect', 'c'], (args) => {
-      const targetId = args[0]
-      if (!targetId) {
-        term.writeln('Usage: connect <targetId>')
-        return
-      }
-      term.writeln(`Connecting to ${wsUrl}..., enable webrtc: ${getLocalConfig('webrtc')}`)
-      openSocket({
-        cols: term.cols,
-        rows: term.rows,
-        targetId
-      }).catch((err) => {
-        term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
-        term.write('> ')
-      })
-    })
-    localCli.registerCommandHandler(['config'], (args) => {
-      handleConfigCommand(term, args).then(([key, value]) => {
-        key === 'url' && setWsUrl(value) // eslint-disable-line
-      }).catch(() => { /* ignore */ })
-    })
-    localCli.registerCommandHandler(['clear'], () => {
-      term.clear()
-      term.write('> ')
-    })
+    const cli = loadLocalCli(term, ttyActions, innerRef)
+    loadScreenShare(term, ssRef)
+    loadAddons(term)
 
     term.onData((data: string) => {
       if (ttyConnected.current) {
-        sendUserInput(data)
+        ttyActions.send(data)
+        cli.handleConnectedInput(data)
       } else {
-        localCli.handleTermInput(data)
+        cli.handleTermInput(data)
       }
     })
 
-    loadAddons(term)
     // open the terminal
     term.open(containerRef.current!)
     // auto focus
     term.focus()
     // load zmodem addon after terminal is opened
-    zmodemRef.current = loadZmodemAddon(term, sendUserInput)
+    zmodemRef.current = loadZmodemAddon(term, ttyActions.send)
     // resize observer
     const { ro, resize } = registerResizeObserver(term, containerRef.current!)
 
     helloMessage(term)
 
     return () => {
-      closeSocket()
+      ttyActions.close()
       unregisterResizeObserver(ro, resize)
       term.dispose()
     }
@@ -183,6 +165,55 @@ function loadAddons(term: Terminal) {
       overlay.showOverlay('\u2702', 300);
     } catch { /* ignore */ }
   })
+}
+
+function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddon {
+  const localCli = new LocalCliAddon()
+  term.loadAddon(localCli)
+
+  localCli.registerCommandHandler(['help', 'h'], () => helpMessage(term))
+  localCli.registerCommandHandler(['reload', 'r'], () => window.location.reload())
+  localCli.registerCommandHandler(['connect', 'c'], (args) => {
+    const targetId = args[0]
+    term.writeln(`Connecting... webrtc enabled: ${getLocalConfig('webrtc')}`)
+    tty.open({
+      cols: term.cols,
+      rows: term.rows,
+      targetId
+    }).catch((err) => {
+      term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
+      term.write('> ')
+    })
+  })
+  localCli.registerCommandHandler(['config'], (args) => {
+    handleConfigCommand(term, args).then(([key, value]) => {
+      // eslint-disable-next-line
+      key === 'url' && (innerRef as { setWsUrl: FnSetUrl }).setWsUrl(value)
+    }).catch(() => { /* ignore */ })
+  })
+  localCli.registerCommandHandler(['clear'], () => {
+    term.clear()
+    term.write('> ')
+  })
+  localCli.registerCommandHandler(['ssc'], () => {
+    term.options.disableStdin = true
+    const ssRef = (innerRef as { ssRef: React.RefObject<ScreenShareAddon | null> }).ssRef
+    ssRef.current?.requestDataChannel().then(cmd => {
+      tty.send(`${cmd}\r`)
+    }).finally(() => {
+      term.options.disableStdin = false
+    })
+  })
+
+  return localCli
+}
+
+function loadScreenShare(term: Terminal, ref: React.RefObject<ScreenShareAddon | null>) {
+  if (ref.current) {
+    ref.current.dispose()
+  }
+  ref.current = new ScreenShareAddon()
+  term.loadAddon(ref.current)
 }
 
 function loadZmodemAddon(term: Terminal, send: (data: string | Uint8Array) => void): ZmodemAddon {

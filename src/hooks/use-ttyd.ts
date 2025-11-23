@@ -44,12 +44,10 @@ const useTTYD = (ttyConfig: TTYConfig) => {
     }
 
     socket.onmessage = async (event: MessageEvent) => {
-      const eventData = event.data as Blob
-      if (eventData.size < 1) {
+      if (event.data.size < 1) {
         return
       }
-      const arrayBuffer = await eventData.arrayBuffer()
-      const bytes = new Uint8Array(arrayBuffer)
+      const bytes = new Uint8Array(event.data)
       const msgType = bytes.at(0)
       switch (msgType) {
         case ServerCommand.OUTPUT.charCodeAt(0):

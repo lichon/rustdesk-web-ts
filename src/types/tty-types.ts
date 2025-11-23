@@ -13,4 +13,13 @@ type TTYOpen = {
   targetId?: string
 }
 
-export type { TTYConfig, TTYOpen }
+type TTY = {
+  open: (openConfig: TTYOpen) => Promise<void>
+  close: () => void
+  send: (data: string | Uint8Array) => void
+  sendRaw: (data: Uint8Array) => void
+}
+
+type FnSetUrl = (url: string) => void
+
+export type { TTYConfig, TTYOpen, TTY, FnSetUrl }

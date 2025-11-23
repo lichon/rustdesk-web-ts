@@ -34,6 +34,10 @@ export class LocalCliAddon implements ITerminalAddon {
     return this.currentLine
   }
 
+  _writeLineStart = () => {
+    this.term.write(this.startOfLine)
+  }
+
   defaultCommandHandler = (_cmd: string, _args: string[]) => {
     // this.term.writeln(`Command not found: ${cmd}`)
     this._writeLineStart()
@@ -48,15 +52,16 @@ export class LocalCliAddon implements ITerminalAddon {
     }
   }
 
-  _writeLineStart = () => {
-    this.term.write(this.startOfLine)
-  }
-
-  processCommand = (line: string) => {
+  processCommand = (line: string, useDefault: boolean = true) => {
     const [command, ...args] = line.trim().split(' ')
     const handler = this.commandHandlers[command]
-    // eslint-disable-next-line
-    handler ? handler(args) : this.defaultCommandHandler(command, args)
+    if (handler) {
+      handler(args)
+      return
+    }
+    if (useDefault) {
+      this.defaultCommandHandler(command, args)
+    }
   }
 
   private _clearLine() {
@@ -222,6 +227,35 @@ export class LocalCliAddon implements ITerminalAddon {
       Array.from(normData).forEach(c => this.handleSingleCharInput(c));
     } else {
       this.handleOtherInput(data)
+    }
+  }
+
+  private connectedLineBuffer: string = ''
+
+  // When connected, only handle local commands starting with '#'
+  handleConnectedInput = (data: string) => {
+    if (data.length > 1) return
+
+    if (data === '\r') { // Enter
+      if (this.connectedLineBuffer.trim()) {
+        this.processCommand(this.connectedLineBuffer.substring(1), false) // skip '#'
+      }
+      this.connectedLineBuffer = ''
+    } else if (data === '\u007f') { // Backspace
+      if (this.connectedLineBuffer.length > 0) {
+        this.connectedLineBuffer = this.connectedLineBuffer.slice(0, -1)
+        return
+      }
+    } else if (data === '\u0003') { // Ctrl+C
+      this.connectedLineBuffer = ''
+    }
+
+    if (this.connectedLineBuffer.length > 0) {
+      this.connectedLineBuffer += data
+      return
+    }
+    if (data === '#') {
+      this.connectedLineBuffer = data
     }
   }
 }

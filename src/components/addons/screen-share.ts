@@ -1,0 +1,224 @@
+import { type ITerminalAddon, Terminal } from '@xterm/xterm'
+
+const MAGIC_START = 0x07
+const BUFFER_SIZE = 10240
+const MAGIC_STRING_BYTES = new TextEncoder().encode('::SSC:')
+
+const DEFAULT_STUN_SERVER: RTCIceServer = {
+  urls: [
+    'stun:stun.cloudflare.com:3478',
+    'stun:stun.nextcloud.com:3478',
+    'stun:stun.nextcloud.com:443',
+  ]
+}
+
+export class ScreenShareAddon implements ITerminalAddon {
+  private term!: Terminal
+  private video: HTMLVideoElement
+
+  private buffer: Uint8Array = new Uint8Array(BUFFER_SIZE)
+  private bufferIndex = 0
+  private matchState = 0
+
+  private pc: RTCPeerConnection | null = null
+
+  constructor() {
+    this.video = document.createElement('video')
+    this.video.className =
+      'rounded-[15px] absolute top-1/2 left-1/2 ' +
+      '-translate-x-1/2 -translate-y-1/2 ' +
+      'w-[80%] h-[80%] bg-black'
+    this.video.autoplay = true
+    this.video.muted = true
+    this.video.playsInline = true
+  }
+
+  activate(terminal: Terminal): void {
+    this.term = terminal
+  }
+
+  dispose(): void {
+    this.pc?.close()
+    this.video.remove()
+  }
+
+  async requestDataChannel() {
+    if (this.pc) {
+      this.pc.close()
+    }
+    const pc = this.pc = new RTCPeerConnection({
+      iceServers: [DEFAULT_STUN_SERVER]
+    })
+    const dc = pc.createDataChannel('bootstrap')
+    let mediaPc: RTCPeerConnection | null = null
+    dc.onopen = () => {
+      // send video request
+      this._requestScreenShare().then(pc => {
+        if (pc === null) {
+          // TODO add log
+          this.pc?.close()
+        }
+        mediaPc = pc
+        const sdp = mediaPc.localDescription!
+        dc.send(JSON.stringify(sdp))
+      })
+    }
+    dc.onmessage = (event) => {
+      if (mediaPc === null) {
+        console.error('No media peer connection to accept answer')
+        return
+      }
+      const ans = JSON.parse(event.data)
+      if (ans?.type !== 'answer') {
+        console.error('Invalid answer received', ans)
+        return
+      }
+      mediaPc.setRemoteDescription(new RTCSessionDescription(ans))
+    }
+    dc.onclose = () => {
+      this.dispose()
+    }
+
+    await pc.setLocalDescription(await pc.createOffer())
+    // wait for ICE gathering to complete
+    await new Promise((resolve) => {
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === 'complete') {
+          resolve(null)
+        }
+      }
+      // in case icegatheringstatechange doesn't fire
+      setTimeout(resolve, 1000)
+    })
+    const offer = pc.localDescription?.sdp
+    return './screen-share-cli -o ' + btoa(offer || '')
+  }
+
+  async _requestScreenShare() {
+    const pc = new RTCPeerConnection({
+      iceServers: [DEFAULT_STUN_SERVER]
+    })
+
+    const term = this.term!
+    if (!this.video.parentNode) {
+      term.element?.appendChild(this.video)
+    }
+
+    const stream = this.video.srcObject as MediaStream | null
+    const video = this.video
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop())
+      this.video.srcObject = null
+    }
+    const newStream = new MediaStream()
+    pc.ontrack = (event) => {
+      if (!event.track) {
+        return
+      }
+      newStream.addTrack(event.track)
+      if (!video.srcObject) {
+        video.srcObject = newStream
+      }
+    }
+    // prepare offer
+    pc.addTransceiver('video', { direction: 'recvonly' })
+    pc.addTransceiver('audio', { direction: 'recvonly' })
+
+    await pc.setLocalDescription(await pc.createOffer())
+    // wait for ICE gathering to complete
+    await new Promise((resolve) => {
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === 'complete') {
+          resolve(null)
+        }
+      }
+      // in case icegatheringstatechange doesn't fire
+      setTimeout(resolve, 1000)
+    })
+    return pc
+  }
+
+  _acceptAnswer(answerB64: string) {
+    if (!this.pc) {
+      console.error('No peer connection to accept answer')
+      return
+    }
+    const answerSdp = atob(answerB64)
+    this.pc.setRemoteDescription(new RTCSessionDescription({
+      type: 'answer',
+      sdp: answerSdp
+    })).catch(err => {
+      console.error('Failed to set remote description', err)
+    })
+  }
+
+  _reset() {
+    this.bufferIndex = 0
+    this.matchState = 0
+  }
+
+  _filterByByte(byte: number) {
+    if (this.matchState === 2) {
+      // Ignore CR (0x0D) and LF (0x0A) bytes
+      if (byte === 0x0D || byte === 0x0A) {
+        return
+      }
+      if (byte === '.'.charCodeAt(0)) { // End of data marker
+        const sscMessage = new TextDecoder().decode(this.buffer.slice(0, this.bufferIndex)).trim()
+        if (sscMessage.startsWith('OFFER:')) {
+          // handle offer, not supported in this side
+          // console.log('offer', atob(sscMessage.substring(6)))
+        } else if (sscMessage.startsWith('ANSWER:')) {
+          // handle answer
+          this._acceptAnswer(sscMessage.substring(7))
+        } else if (sscMessage.startsWith('CLOSE:')) {
+          // handle close
+          console.log('close', sscMessage.substring(6))
+          this.dispose()
+        }
+        this._reset()
+      } else {
+        if (this.bufferIndex < BUFFER_SIZE) {
+          this.buffer[this.bufferIndex++] = byte
+        } else {
+          // buffer overflow, reset
+          this._reset()
+        }
+      }
+      return
+    }
+    if (this.matchState === 1) {
+      if (this.bufferIndex < MAGIC_STRING_BYTES.length) {
+        this.buffer[this.bufferIndex++] = byte
+        if (this.bufferIndex === MAGIC_STRING_BYTES.length) {
+          let matched = true
+          for (let i = 0; i < MAGIC_STRING_BYTES.length; i++) {
+            if (this.buffer[i] !== MAGIC_STRING_BYTES[i]) {
+              matched = false
+              break
+            }
+          }
+          if (matched) {
+            this.matchState = 2
+            this.bufferIndex = 0 // Clear buffer for data
+          } else {
+            this._reset()
+          }
+        }
+      }
+      return
+    }
+    if (byte === MAGIC_START && this.matchState === 0) {
+      this.matchState = 1
+      this.bufferIndex = 0
+    } else {
+      this._reset()
+    }
+  }
+
+  handleTermOutput = (uint8Array: Uint8Array) => {
+    for (const x of uint8Array) {
+      this._filterByByte(x)
+    }
+  }
+}

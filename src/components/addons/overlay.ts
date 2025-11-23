@@ -8,18 +8,10 @@ export class OverlayAddon implements ITerminalAddon {
 
   constructor() {
     this.overlayNode = document.createElement('div')
-    this.overlayNode.style.cssText = `border-radius: 15px;
-font-size: xx-large;
-opacity: 0.75;
-padding: 0.2em 0.5em;
-position: absolute;
-user-select: none;
-transition: opacity 180ms ease-in;
-top: 50%;
-left: 50%;
-transform: translate(-50%, -50%);
--webkit-user-select: none;
--moz-user-select: none;`
+    this.overlayNode.className =
+      'rounded-[15px] text-4xl py-[0.2em] px-[0.5em] absolute select-none ' +
+      'transition-opacity duration-[180ms] ease-in top-1/2 left-1/2 ' +
+      '-translate-x-1/2 -translate-y-1/2'
 
     this.overlayNode.addEventListener(
       'mousedown',
@@ -42,10 +34,10 @@ transform: translate(-50%, -50%);
     const overlayNode = this.overlayNode
     if (!terminal.element) return
 
-    overlayNode.style.color = '#101010'
-    overlayNode.style.backgroundColor = '#f0f0f0'
     overlayNode.textContent = msg
-    overlayNode.style.opacity = '0.75'
+    overlayNode.classList.add('text-[#101010]', 'bg-[#f0f0f0]')
+    overlayNode.classList.remove('opacity-0')
+    overlayNode.classList.add('opacity-75')
 
     if (!overlayNode.parentNode) {
       terminal.element.appendChild(overlayNode)
@@ -55,13 +47,15 @@ transform: translate(-50%, -50%);
     if (!timeout) return
 
     this.overlayTimeout = window.setTimeout(() => {
-      overlayNode.style.opacity = '0'
+      overlayNode.classList.remove('opacity-75')
+      overlayNode.classList.add('opacity-0')
       this.overlayTimeout = window.setTimeout(() => {
         if (overlayNode.parentNode) {
           overlayNode.parentNode.removeChild(overlayNode)
         }
         this.overlayTimeout = undefined
-        overlayNode.style.opacity = '0.75'
+        overlayNode.classList.remove('opacity-0')
+        overlayNode.classList.add('opacity-75')
       }, 200)
     }, timeout || 1500)
   }
