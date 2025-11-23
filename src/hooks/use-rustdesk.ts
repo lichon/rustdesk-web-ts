@@ -114,8 +114,8 @@ class RustSessionImpl implements RustSession {
       pc.onconnectionstatechange = () => {
         console.log(`PC connection state: ${pc.connectionState}`)
       }
-      pc.onicecandidateerror = (event) => {
-        console.error('ICE Candidate Error:', event)
+      pc.onicecandidate = (e) => {
+        console.log(`PC ice candidate: ${e.candidate?.candidate}`)
       }
       pc.onsignalingstatechange = () => {
         console.log(`PC signaling state: ${pc.signalingState}`)

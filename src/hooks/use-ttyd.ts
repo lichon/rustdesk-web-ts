@@ -16,7 +16,7 @@ enum ClientCommand {
   RESUME = '3',
 }
 
-const useTTY = (ttyConfig: TTYConfig) => {
+const useTTYD = (ttyConfig: TTYConfig) => {
   const ttySocket = useRef<WebSocket | null>(null)
   const textEncoder = new TextEncoder()
   const textDecoder = new TextDecoder()
@@ -28,6 +28,7 @@ const useTTY = (ttyConfig: TTYConfig) => {
     }
     const wsUrl = ttyConfig.url.replace('ttyd://', 'ws://').replace('ttyds://', 'wss://')
     const socket = new WebSocket(wsUrl, 'tty')
+    socket.binaryType = 'arraybuffer'
     ttySocket.current = socket
     console.log('new tty socket', socket)
 
@@ -101,4 +102,4 @@ const useTTY = (ttyConfig: TTYConfig) => {
   return { open, close, send, sendRaw }
 }
 
-export default useTTY
+export default useTTYD

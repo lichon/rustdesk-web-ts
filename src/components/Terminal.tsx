@@ -11,7 +11,7 @@ import '@xterm/xterm/css/xterm.css'
 import { OverlayAddon } from './addons/overlay'
 import { ZmodemAddon } from './addons/zmodem'
 import { LocalCliAddon } from './addons/local-cli'
-import useTTY from '../hooks/use-tty'
+import useTTYD from '../hooks/use-ttyd'
 import useRustDesk from '../hooks/use-rustdesk'
 import type { TTYConfig } from '../types/tty-types'
 
@@ -63,7 +63,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: (url: str
     close: closeSocket,
     send: sendUserInput,
     // eslint-disable-next-line react-hooks/rules-of-hooks
-  } = isRustDesk ? useRustDesk(ttyConfig) : useTTY(ttyConfig)
+  } = isRustDesk ? useRustDesk(ttyConfig) : useTTYD(ttyConfig)
 
   useEffect(() => {
     console.log('TerminalInner mounted with wsUrl:', wsUrl)
