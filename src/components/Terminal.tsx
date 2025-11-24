@@ -198,7 +198,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
   })
   localCli.registerCommandHandler(['ssc'], (args) => {
     const ssRef = (innerRef as { ssRef: React.RefObject<ScreenShareAddon | null> }).ssRef
-    if (args.length > 0 && args[0] === 'stop') {
+    if (args.length > 0 && ['stop', 'close'].includes(args[0])) {
       ssRef.current?.dispose()
       return
     }

@@ -32,9 +32,8 @@ export class ScreenShareAddon implements ITerminalAddon {
     this.ssc_dir = ssc_dir
     this.video = document.createElement('video')
     this.video.className =
-      'rounded-[15px] absolute top-1/2 left-1/2 ' +
-      '-translate-x-1/2 -translate-y-1/2 ' +
-      'h-[80%] aspect-video bg-black'
+      'rounded-[10px] absolute top-4 right-4 ' +
+      'h-[50%] aspect-video bg-black'
     this.video.autoplay = true
     this.video.muted = true
     this.video.playsInline = true
@@ -45,13 +44,17 @@ export class ScreenShareAddon implements ITerminalAddon {
   }
 
   dispose(): void {
-    this.pc?.close()
     this.video.remove()
+    this.pc?.close()
+    this.pc = null
   }
 
   async requestDataChannel(args: string[]): Promise<string> {
     if (this.pc) {
-      this.pc.close()
+      return 'echo "Screen share session already exists"'
+    }
+    if (args.includes('-h') || args.includes('--help')) {
+      return `${this.ssc_dir}ssc ${args.join(' ')}`
     }
     const pc = this.pc = new RTCPeerConnection({
       iceServers: [DEFAULT_STUN_SERVER]
@@ -98,6 +101,12 @@ export class ScreenShareAddon implements ITerminalAddon {
       // in case icegatheringstatechange doesn't fire
       setTimeout(resolve, 1000)
     })
+    setTimeout(() => {
+      if (pc.signalingState == 'have-local-offer') {
+        dc.close()
+        this.dispose()
+      }
+    }, 30000) // timeout after 30 seconds
     const offer = pc.localDescription?.sdp
     return `${this.ssc_dir}ssc ${args.join(' ')} -o ${btoa(offer || '')}`
   }
@@ -181,7 +190,6 @@ export class ScreenShareAddon implements ITerminalAddon {
           this._acceptAnswer(sscMessage.substring(7))
         } else if (sscMessage.startsWith('CLOSE:')) {
           // handle close
-          console.log('close', sscMessage.substring(6))
           this.dispose()
         }
         this._reset()
