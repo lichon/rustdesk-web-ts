@@ -17,7 +17,6 @@ import useRustDesk from '../hooks/use-rustdesk'
 
 import type { TTYConfig, TTY, FnSetUrl } from '../types/tty-types'
 
-const { VITE_DEFAULT_TTY_URL } = import.meta.env
 const TEXT_DECODER = new TextDecoder()
 const CONFIG_KEYS = [
   'debug', // boolean enable message debug logging
@@ -27,7 +26,8 @@ const CONFIG_KEYS = [
   'turn-url', // string turn server url, turn://user:pass@host:port
   'turn-only', // boolean use only turn server
   'trzsz', // boolean enable trzsz file transfer, trs tsz cmd
-  'zmodem' // boolean enable zmodem file transfer, kinda experimental
+  'zmodem', // boolean enable zmodem file transfer, kinda experimental
+  'confirm-to-unload' // boolean enable confirm dialog on page unload
 ]
 
 function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl }) {
@@ -36,7 +36,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
   const zmodemRef = useRef<ZmodemAddon | null>(null)
   const ssRef = useRef<ScreenShareAddon | null>(null)
   const ttyConnected = useRef<boolean>(false)
-  const isRustDesk = !isTTYdUrl(wsUrl)
+  const ttyType: string = getBackendType(wsUrl)
 
   const innerRef = {
     wsUrl,
@@ -71,7 +71,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
   }
 
   // eslint-disable-next-line
-  const tty: TTY = isRustDesk ? useRustDesk(ttyConfig) : useTTYD(ttyConfig)
+  const tty: TTY = ttyType == 'rustdesk' ? useRustDesk(ttyConfig) : useTTYD(ttyConfig)
 
   useEffect(() => {
     console.log('TerminalInner mounted with wsUrl:', wsUrl)
@@ -249,14 +249,15 @@ export default function TerminalComponent() {
   const [wsUrl, setWsUrl] = useState(getDefaultUrl())
 
   useEffect(() => {
-    console.log('TerminalComponent mounted')
+    if (getLocalConfig('confirm-to-unload') !== 'true') {
+      return
+    }
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault()
       e.returnValue = ''
     }
-    // window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
-      console.log('TerminalComponent unmounted')
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [])
@@ -266,12 +267,12 @@ export default function TerminalComponent() {
   return <TerminalInner key={wsUrl} wsUrl={wsUrl} setWsUrl={setWsUrl} />
 }
 
-const isTTYdUrl = (url: string) => {
-  return url.startsWith('ttyd://') || url.startsWith('ttyds://')
+const getBackendType = (url: string) => {
+  return url.startsWith('ttyd://') || url.startsWith('ttyds://') ? 'ttyd' : 'rustdesk'
 }
 
 const getDefaultUrl = () => {
-  return localStorage.getItem('url') || VITE_DEFAULT_TTY_URL
+  return localStorage.getItem('url') || '/ws/id'
 }
 
 const getLocalConfig = (key: string): string | null => {

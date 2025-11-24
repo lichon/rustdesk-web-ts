@@ -12,6 +12,10 @@ const DEFAULT_STUN_SERVER: RTCIceServer = {
   ]
 }
 
+type ScreenShareOptions = {
+  ssc_dir?: string
+}
+
 export class ScreenShareAddon implements ITerminalAddon {
   private term!: Terminal
   private video: HTMLVideoElement
@@ -22,7 +26,10 @@ export class ScreenShareAddon implements ITerminalAddon {
 
   private pc: RTCPeerConnection | null = null
 
-  constructor() {
+  private ssc_dir = ''
+
+  constructor({ ssc_dir = '' }: ScreenShareOptions = {}) {
+    this.ssc_dir = ssc_dir
     this.video = document.createElement('video')
     this.video.className =
       'rounded-[15px] absolute top-1/2 left-1/2 ' +
@@ -92,7 +99,7 @@ export class ScreenShareAddon implements ITerminalAddon {
       setTimeout(resolve, 1000)
     })
     const offer = pc.localDescription?.sdp
-    return `./screen-share-cli ${args.join(' ')} -o ` + btoa(offer || '')
+    return `${this.ssc_dir}ssc ${args.join(' ')} -o ${btoa(offer || '')}`
   }
 
   async _requestScreenShare() {
