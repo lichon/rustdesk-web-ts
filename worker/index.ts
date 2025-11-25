@@ -45,12 +45,12 @@ app.all('/api/*', async (c) => {
   return c.json({}, 404)
 })
 
-app.get('/ttyd/:ttydUrl/:token', async (c) => {
+app.get('/ttyd/:ttydUrl/:uri', async (c) => {
   const url = c.req.param('ttydUrl')
   if (!url?.length) {
     return c.text('invalid request', 400)
   }
-  const uri = c.req.param('token')
+  const uri = c.req.param('uri')
   if (!['token', 'ws'].includes(uri)) {
     return c.text('invalid request', 400)
   }

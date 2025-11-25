@@ -39,7 +39,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
   const ttyType: string = getBackendType(wsUrl)
 
   const innerRef = {
-    wsUrl,
+    ttyConnected,
     setWsUrl,
     ssRef
   }
@@ -175,7 +175,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
   localCli.registerCommandHandler(['reload', 'r'], () => window.location.reload())
   localCli.registerCommandHandler(['connect', 'c'], (args) => {
     const targetId = args[0]
-    term.writeln(`Connecting... webrtc enabled: ${getLocalConfig('webrtc')}`)
+    term.writeln(`Connecting to ${getDefaultUrl()}, with webrtc: ${getLocalConfig('webrtc')}`)
     tty.open({
       cols: term.cols,
       rows: term.rows,
@@ -200,9 +200,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     const encodedHost = encodeURIComponent(args[0])
     const res = await fetch(`/api/nslookup?host=${encodedHost}`)
     res.json().then((data) => {
-      data.Answer.forEach((record: {name: string, data: string, TTL: number}) => {
-        term.writeln(`  ${record.name} ${record.data} ${record.TTL}`)
-      })
+      term.writeln(JSON.stringify(data['Answer'], null, 2).replace(/\n/g, '\r\n'))
       term.write('> ')
     }).catch((err) => {
       term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
@@ -210,6 +208,12 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     })
   })
   localCli.registerCommandHandler(['ssc'], (args) => {
+    const ttyConnected = (innerRef as { ttyConnected: React.RefObject<boolean> }).ttyConnected
+    if (!ttyConnected.current) {
+      term.writeln('Not connected to tty, cannot start screen share session.')
+      term.write('> ')
+      return
+    }
     const ssRef = (innerRef as { ssRef: React.RefObject<ScreenShareAddon | null> }).ssRef
     term.options.disableStdin = true
     ssRef.current?.requestDataChannel(args).then(cmd => {
@@ -303,7 +307,6 @@ const setLocalConfig = (key: string, value: string): boolean => {
 const helloMessage = (term: Terminal) => {
   term.writeln('Welcome to the RustDesk terminal!')
   term.writeln('Type "help" or "h" for a list of available commands.')
-  term.writeln(`Backend URL: ${getDefaultUrl()} webrtc enabled: ${getLocalConfig('webrtc')}\n`)
   term.write('> ')
 }
 
