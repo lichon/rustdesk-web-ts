@@ -26,8 +26,20 @@ const useTTYD = (ttyConfig: TTYConfig) => {
       ttySocket.current?.close()
       console.warn(`TTY socket was ${ttySocket.current?.readyState}, closing existing socket`)
     }
-    const wsUrl = ttyConfig.url.replace('ttyd://', 'ws://').replace('ttyds://', 'wss://')
-    const socket = new WebSocket(wsUrl, 'tty')
+    const ttydUrl = ttyConfig.url.replace('ttyd://', 'http://').replace('ttyds://', 'https://')
+    const corsUrl = '/ttyd/' + encodeURIComponent(ttydUrl)
+    const tokenObj: { token?: string } = {}
+    // CORS request to get token
+    const res = await fetch(corsUrl + '/token')
+    if (res.ok) {
+      tokenObj.token = (await res.json()).token
+    }
+    if (tokenObj.token === undefined) {
+      ttyConfig.onSocketClose?.('Login failed: no token received')
+      return
+    }
+
+    const socket = new WebSocket(corsUrl + '/ws', 'tty')
     socket.binaryType = 'arraybuffer'
     ttySocket.current = socket
     console.log('new tty socket', socket)
@@ -36,7 +48,7 @@ const useTTYD = (ttyConfig: TTYConfig) => {
       console.log('tty socket opened', ttyOpen.cols, ttyOpen.rows)
       socket.send(textEncoder.encode(
         JSON.stringify({
-          AuthToken: '',
+          AuthToken: tokenObj.token,
           columns: ttyOpen.cols,
           rows: ttyOpen.rows
         })))
@@ -90,7 +102,6 @@ const useTTYD = (ttyConfig: TTYConfig) => {
   }
 
   const close = () => {
-    console.log('close tty socket called')
     ttySocket.current?.close()
   }
 

@@ -43,18 +43,23 @@ export class ScreenShareAddon implements ITerminalAddon {
     this.term = terminal
   }
 
+  // used by addon manager
   dispose(): void {
+    this.close()
+  }
+
+  close(): void {
     this.video.remove()
     this.pc?.close()
     this.pc = null
   }
 
   async requestDataChannel(args: string[]): Promise<string> {
+    if (args.includes('-h') || args.includes('--help') || args.includes('--close')) {
+      return `${this.ssc_dir}ssc ${args.join(' ')}`
+    }
     if (this.pc) {
       return 'echo "Screen share session already exists"'
-    }
-    if (args.includes('-h') || args.includes('--help')) {
-      return `${this.ssc_dir}ssc ${args.join(' ')}`
     }
     const pc = this.pc = new RTCPeerConnection({
       iceServers: [DEFAULT_STUN_SERVER]
@@ -87,7 +92,7 @@ export class ScreenShareAddon implements ITerminalAddon {
     }
     dc.onclose = () => {
       mediaPc?.close()
-      this.dispose()
+      this.close()
     }
 
     await pc.setLocalDescription(await pc.createOffer())
@@ -104,7 +109,7 @@ export class ScreenShareAddon implements ITerminalAddon {
     setTimeout(() => {
       if (pc.signalingState == 'have-local-offer') {
         dc.close()
-        this.dispose()
+        this.close()
       }
     }, 30000) // timeout after 30 seconds
     const offer = pc.localDescription?.sdp
@@ -177,7 +182,7 @@ export class ScreenShareAddon implements ITerminalAddon {
   _filterByByte(byte: number) {
     if (this.matchState === 2) {
       // Ignore CR (0x0D) and LF (0x0A) bytes
-      if (byte === 0x0D || byte === 0x0A) {
+      if (byte === 0x0D || byte === 0x0A || byte === ' '.charCodeAt(0)) {
         return
       }
       if (byte === '.'.charCodeAt(0)) { // End of data marker
@@ -187,10 +192,11 @@ export class ScreenShareAddon implements ITerminalAddon {
           // console.log('offer', atob(sscMessage.substring(6)))
         } else if (sscMessage.startsWith('ANSWER:')) {
           // handle answer
+          console.log('answer', sscMessage)
           this._acceptAnswer(sscMessage.substring(7))
         } else if (sscMessage.startsWith('CLOSE:')) {
           // handle close
-          this.dispose()
+          this.close()
         }
         this._reset()
       } else {

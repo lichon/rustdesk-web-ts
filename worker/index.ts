@@ -32,4 +32,18 @@ app.all('/api/*', async (c) => {
   return c.json({}, 404)
 })
 
+app.get('/ttyd/:ttydUrl/:token', async (c) => {
+  const url = c.req.param('ttydUrl')
+  if (!url?.length) {
+    return c.text('invalid request', 400)
+  }
+  const uri = c.req.param('token')
+  if (!['token', 'ws'].includes(uri)) {
+    return c.text('invalid request', 400)
+  }
+  return fetch(url + `/${uri}`, {
+    headers: c.req.raw.headers
+  })
+})
+
 export default app

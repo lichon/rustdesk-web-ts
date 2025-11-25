@@ -1,7 +1,7 @@
 type TTYConfig = {
   url: string
   config: Record<string, unknown>,
-  onAuthRequired: () => Promise<string>
+  onAuthRequired: (prompt?: string) => Promise<string>
   onSocketOpen?: () => void
   onSocketClose?: (reason?: string) => void
   onSocketData: (data: Uint8Array, buffer?: ArrayBuffer) => void
