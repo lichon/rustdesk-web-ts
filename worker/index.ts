@@ -29,7 +29,6 @@ app.get('/ws/relay/:session', async (c) => {
 
 app.get('/api/nslookup', async (c) => {
   const target = c.req.queries('host')
-  console.log(`nslookup request for ${target}`)
   if (!target?.length) {
     return c.text('invalid request', 400)
   }
@@ -38,6 +37,23 @@ app.get('/api/nslookup', async (c) => {
   return fetch(`https://223.5.5.5/resolve?name=${target}`, {
     headers: headers
   })
+})
+
+app.get('/api/curl', async (c) => {
+  let target = c.req.queries('url')?.at(0)
+  const method = c.req.queries('method')?.at(0)
+  if (!target?.length) {
+    return c.text('invalid url', 400)
+  }
+  if (!target.includes('://')) {
+    target = 'http://' + target
+  }
+  if (!/^https?:\/\//.test(target)) {
+    return c.text('invalid url', 400)
+  }
+  const url = new URL(target)
+  console.log(`curl ${method || 'GET'} ${url.href}`)
+  return fetch(url, { method: method || 'GET' })
 })
 
 app.all('/api/*', async (c) => {

@@ -67,7 +67,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
       termRef.current?.writeln(`\n\x1b[31mConnection closed. ${reason}\x1b[0m\n`)
       termRef.current?.write('> ')
     },
-    onAuthRequired: async () => handleSecretInput(termRef.current!)
+    onAuthRequired: async (prompt?: string) => handleSecretInput(termRef.current!, prompt)
   }
 
   // eslint-disable-next-line
@@ -207,6 +207,26 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
       term.write('> ')
     })
   })
+  localCli.registerCommandHandler(['curl'], async (args) => {
+    // simple curl implementation using fetch, done by backend to avoid CORS issue
+    // TODO support more options, ws, wss
+    const res = await fetch(`/api/curl?url=${encodeURIComponent(args[args.length - 1])}`)
+    term.writeln(`HTTP/${res.status} ${res.statusText}\n`)
+    if (res.type.startsWith('application/json')) {
+      res.json().then((data) => {
+        term.writeln(JSON.stringify(data, null, 2).replace(/\n/g, '\r\n'))
+        term.write('> ')
+      })
+    } else {
+      res.text().then((data) => {
+        term.writeln(data.replace(/\n/g, '\r\n'))
+        term.write('> ')
+      })
+    }
+  })
+  localCli.registerCommandHandler(['ssh'], (_args) => {
+    // TODO add web ssh with wasm
+  })
   localCli.registerCommandHandler(['ssc'], (args) => {
     const ttyConnected = (innerRef as { ttyConnected: React.RefObject<boolean> }).ttyConnected
     if (!ttyConnected.current) {
@@ -258,28 +278,6 @@ function loadZmodemAddon(term: Terminal, send: (data: string | Uint8Array) => vo
   return zmodemAddon
 }
 
-export default function TerminalComponent() {
-  const [wsUrl, setWsUrl] = useState(getDefaultUrl())
-
-  useEffect(() => {
-    if (getLocalConfig('confirm-to-unload') !== 'true') {
-      return
-    }
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      e.returnValue = ''
-    }
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-    }
-  }, [])
-
-  // Use a key to force remount of TerminalInner when wsUrl changes
-  // This correctly handles re-initialization of hooks and terminal state.
-  return <TerminalInner key={wsUrl} wsUrl={wsUrl} setWsUrl={setWsUrl} />
-}
-
 const getBackendType = (url: string) => {
   return url.startsWith('ttyd://') || url.startsWith('ttyds://') ? 'ttyd' : 'rustdesk'
 }
@@ -324,9 +322,9 @@ const helpMessage = (term: Terminal) => {
   term.write('> ')
 }
 
-const handleSecretInput = (term: Terminal): Promise<string> => {
+const handleSecretInput = (term: Terminal, prompt?: string): Promise<string> => {
   // prompt the user for a password
-  term.writeln('Authentication required. input password:')
+  term.writeln(prompt || 'Authentication required. input password:')
   term.options.disableStdin = true
   return new Promise<string>((resolve) => {
     let secret = ''
@@ -395,4 +393,26 @@ const handleConfigCommand = async (term: Terminal, args: string[]) => {
 
   term.write('\n> ')
   return Promise.reject()
+}
+
+export default function TerminalComponent() {
+  const [wsUrl, setWsUrl] = useState(getDefaultUrl())
+
+  useEffect(() => {
+    if (getLocalConfig('confirm-to-unload') !== 'true') {
+      return
+    }
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [])
+
+  // Use a key to force remount of TerminalInner when wsUrl changes
+  // This correctly handles re-initialization of hooks and terminal state.
+  return <TerminalInner key={wsUrl} wsUrl={wsUrl} setWsUrl={setWsUrl} />
 }
