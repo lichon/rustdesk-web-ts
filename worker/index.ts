@@ -27,6 +27,19 @@ app.get('/ws/relay/:session', async (c) => {
   return hbbrObj.fetch(c.req.raw)
 })
 
+app.get('/api/nslookup', async (c) => {
+  const target = c.req.queries('host')
+  console.log(`nslookup request for ${target}`)
+  if (!target?.length) {
+    return c.text('invalid request', 400)
+  }
+  const headers = c.req.header()
+  headers['Host'] = '223.5.5.5'
+  return fetch(`https://223.5.5.5/resolve?name=${target}`, {
+    headers: headers
+  })
+})
+
 app.all('/api/*', async (c) => {
   // TODO: implement some apis
   return c.json({}, 404)

@@ -196,6 +196,19 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     term.clear()
     term.write('> ')
   })
+  localCli.registerCommandHandler(['nslookup'], async (args) => {
+    const encodedHost = encodeURIComponent(args[0])
+    const res = await fetch(`/api/nslookup?host=${encodedHost}`)
+    res.json().then((data) => {
+      data.Answer.forEach((record: {name: string, data: string, TTL: number}) => {
+        term.writeln(`  ${record.name} ${record.data} ${record.TTL}`)
+      })
+      term.write('> ')
+    }).catch((err) => {
+      term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
+      term.write('> ')
+    })
+  })
   localCli.registerCommandHandler(['ssc'], (args) => {
     const ssRef = (innerRef as { ssRef: React.RefObject<ScreenShareAddon | null> }).ssRef
     term.options.disableStdin = true
