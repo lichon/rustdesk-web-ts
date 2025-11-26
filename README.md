@@ -12,6 +12,14 @@
 *   **Deployable on the Edge:** Designed to be deployed to Cloudflare Workers.
 *   **Built-in rustdesk server:** rustdesk hbbs with websocket relay supported.
 
+## Ideas
+
+* [ ] Dockerfile for local deploy
+* [ ] ssh from web
+* [ ] keyboard mouse control
+* [ ] more handy cli utils
+
+
 ## Getting Started
 
 Follow these instructions to get a local copy up and running for development and testing purposes.
