@@ -26,8 +26,20 @@ const useTTYD = (ttyConfig: TTYConfig) => {
       ttySocket.current?.close()
       console.warn(`TTY socket was ${ttySocket.current?.readyState}, closing existing socket`)
     }
-    const ttydUrl = ttyConfig.url.replace('ttyd://', 'http://').replace('ttyds://', 'https://')
-    const corsUrl = '/ttyd/' + encodeURIComponent(ttydUrl)
+    const ttydUrl = new URL(ttyConfig.url.replace('ttyd://', 'http://').replace('ttyds://', 'https://'))
+    if (ttyConfig.config.cname) {
+      const cnameRes = await fetch('/api/nslookup?host=' + ttydUrl.hostname)
+      if (cnameRes.ok) {
+        const cnameData = await cnameRes.json()
+        cnameData.Answer?.forEach((ans: { type: number, data: string }) => {
+          if (ans.type === 5) { // CNAME record
+            ttydUrl.hostname = ans.data.replace(/\.$/, '') // remove trailing dot
+          }
+        })
+      }
+    }
+
+    const corsUrl = '/ttyd/' + encodeURIComponent(ttydUrl.href)
     const tokenObj: { token?: string } = {}
     // CORS request to get token
     const res = await fetch(corsUrl + '/token')

@@ -23,6 +23,7 @@ const CONFIG_KEYS = [
   'url', // string backend url
   'my-id', // string my rustdesk id, display on remote side
   'webrtc', // boolean enable webrtc
+  'cname', // boolean get cname of server host
   'turn-url', // string turn server url, turn://user:pass@host:port
   'turn-only', // boolean use only turn server
   'trzsz', // boolean enable trzsz file transfer, trs tsz cmd
