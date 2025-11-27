@@ -1,4 +1,3 @@
-import { useRef } from 'react'
 import * as rendezvous from './hbbs-rendezvous'
 import * as deskMsg from './hbbs-message'
 import type { TTYConfig, TTYOpen } from '../types/tty-types'
@@ -356,8 +355,8 @@ class RustSessionImpl implements RustSession {
 }
 
 const useRustDesk = (ttyConfig: TTYConfig) => {
-  const activeSession = useRef<RustSession | null>(undefined)
-  const currentRequest = useRef<TTYOpen | undefined>(undefined)
+  let activeSession: RustSession | null = null
+  let currentRequest: TTYOpen | null = null
 
   const open = async (ttyOpen: TTYOpen) => {
     DEBUG_CONFIG = getDebug(ttyConfig.config)
@@ -365,16 +364,17 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
     if (!targetId) {
       throw new Error('No target ID provided')
     }
-    if (currentRequest.current) {
+
+    if (currentRequest) {
       return
     }
-    currentRequest.current = ttyOpen
+    currentRequest = ttyOpen
 
-    if (activeSession.current?.isOpen()) {
-      activeSession.current.close()
+    if (activeSession?.isOpen()) {
+      activeSession?.close()
       console.warn(`TTY socket on, close existing socket`)
     }
-    const session = activeSession.current = new RustSessionImpl(targetId, ttyConfig.config)
+    const session = activeSession = new RustSessionImpl(targetId, ttyConfig.config)
     if (isWebrtcEnabled(ttyConfig.config)) {
       await session.initDataChannel()
     }
@@ -417,20 +417,20 @@ const useRustDesk = (ttyConfig: TTYConfig) => {
         session.start(relayServer, msg.union.relayResponse!.uuid, ttyConfig, ttyOpen)
       }
     } finally {
-      currentRequest.current = undefined
+      currentRequest = null
     }
   }
 
   const send = (data: string | Uint8Array) => {
-    activeSession.current?.send(data)
+    activeSession?.send(data)
   }
 
   const close = () => {
-    activeSession.current?.close()
+    activeSession?.close()
   }
 
   const sendRaw = (dataObj: object) => {
-    activeSession.current?.sendRaw(dataObj)
+    activeSession?.sendRaw(dataObj)
   }
 
   return { open, close, send, sendRaw }

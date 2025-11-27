@@ -1,4 +1,3 @@
-import { useRef } from 'react'
 import type { TTYConfig, TTYOpen } from '../types/tty-types'
 
 enum ServerCommand {
@@ -17,14 +16,14 @@ enum ClientCommand {
 }
 
 const useTTYD = (ttyConfig: TTYConfig) => {
-  const ttySocket = useRef<WebSocket | null>(null)
+  let ttySocket: WebSocket | null = null
   const textEncoder = new TextEncoder()
   const textDecoder = new TextDecoder()
 
   const open = async (ttyOpen: TTYOpen) => {
-    if (ttySocket.current && ttySocket.current.readyState in [WebSocket.OPEN, WebSocket.CONNECTING]) {
-      ttySocket.current?.close()
-      console.warn(`TTY socket was ${ttySocket.current?.readyState}, closing existing socket`)
+    if (ttySocket && ttySocket.readyState in [WebSocket.OPEN, WebSocket.CONNECTING]) {
+      ttySocket.close()
+      console.warn(`TTY socket was ${ttySocket.readyState}, closing existing socket`)
     }
     const ttydUrl = new URL(ttyConfig.url.replace('ttyd://', 'http://').replace('ttyds://', 'https://'))
     if (ttyConfig.config.cname) {
@@ -53,7 +52,7 @@ const useTTYD = (ttyConfig: TTYConfig) => {
 
     const socket = new WebSocket(corsUrl + '/ws', 'tty')
     socket.binaryType = 'arraybuffer'
-    ttySocket.current = socket
+    ttySocket = socket
     console.log('new tty socket', socket)
 
     socket.onopen = () => {
@@ -99,7 +98,7 @@ const useTTYD = (ttyConfig: TTYConfig) => {
   }
 
   const send = (data: string | Uint8Array) => {
-    const socket = ttySocket.current
+    const socket = ttySocket
     if (socket?.readyState != WebSocket.OPEN) {
       return
     }
@@ -114,7 +113,7 @@ const useTTYD = (ttyConfig: TTYConfig) => {
   }
 
   const close = () => {
-    ttySocket.current?.close()
+    ttySocket?.close()
   }
 
   const sendRaw = async (_dataObj: object) => {

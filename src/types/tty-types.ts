@@ -1,3 +1,6 @@
+
+type FnSetUrl = (url: string) => void
+
 type TTYConfig = {
   url: string
   config: Record<string, unknown>,
@@ -20,6 +23,16 @@ type TTY = {
   sendRaw: (data: Uint8Array) => void
 }
 
-type FnSetUrl = (url: string) => void
+type ChannelMember = {
+  id: string
+  name: string
+  image: string
+}
 
-export type { TTYConfig, TTYOpen, TTY, FnSetUrl }
+interface TTYChannel {
+  sendMessage: (message: string) => Promise<void>
+  isConnected: () => boolean
+  onlineMembers: () => ChannelMember[]
+}
+
+export type { TTYConfig, TTYOpen, TTY, FnSetUrl, TTYChannel }

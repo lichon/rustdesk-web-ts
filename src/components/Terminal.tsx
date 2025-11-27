@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+'use client'
+
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { Terminal, type IDisposable } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -14,8 +16,10 @@ import { LocalCliAddon } from './addons/local-cli'
 import { ScreenShareAddon } from './addons/screen-share'
 import useTTYD from '../hooks/use-ttyd'
 import useRustDesk from '../hooks/use-rustdesk'
+import useSupabaseChannel from '../hooks/use-supabase'
+import { ChromeTTS } from '../lib/tts'
 
-import type { TTYConfig, TTY, FnSetUrl } from '../types/tty-types'
+import type { TTYConfig, TTY, FnSetUrl, TTYChannel } from '../types/tty-types'
 
 const TEXT_DECODER = new TextDecoder()
 const CONFIG_KEYS = [
@@ -29,6 +33,7 @@ const CONFIG_KEYS = [
   'trzsz', // boolean enable trzsz file transfer, trs tsz cmd
   'zmodem', // boolean enable zmodem file transfer, kinda experimental
   'bark-url', // string bark notification url
+  'channel-room', // string channel room
   'confirm-to-unload' // boolean enable confirm dialog on page unload
 ]
 
@@ -42,13 +47,29 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
   const ttyConnected = useRef<boolean>(false)
   const ttyType: string = getBackendType(wsUrl)
 
+  const ttsPlayer = useMemo(() => new ChromeTTS(), [])
+  const sbChannel: TTYChannel = useSupabaseChannel({
+    roomName: getLocalConfig('channel-room') || 'public',
+    onChannelOpen: () => {
+      termRef.current?.writeln(`\n\x1b[32mConnected to ${getLocalConfig('channel-room')}.\x1b[0m\n`)
+      cliRef.current?.writePrompt()
+    },
+    onChatMessage: (msg) => {
+      if (ChromeTTS.isSupported() && msg.sender !== 'Self') {
+        ttsPlayer.speak(msg.content as string)
+      }
+      console.log(`${msg.sender}: ${msg.content}`)
+    }
+  })
+
   const innerRef = {
     setWsUrl,
-    ttyConnected,
-    termRef,
-    ssRef,
-    cliRef,
-    zmodemRef
+    channel: sbChannel,
+    ttyConnected: ttyConnected.current,
+    termRef: termRef.current,
+    ssRef: ssRef.current,
+    cliRef: cliRef.current,
+    zmodemRef: zmodemRef.current,
   }
 
   const ttyConfig: TTYConfig = {
@@ -122,12 +143,12 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
     const { ro, resize } = registerResizeObserver(term, containerRef.current!)
 
     helloMessage(term)
-    cliRef.current?.writePrompt()
 
     return () => {
       tty.close()
       unregisterResizeObserver(ro, resize)
       term.dispose()
+      console.log('TerminalInner unmounted with wsUrl:', wsUrl)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -237,17 +258,27 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     const res = await fetch(`/api/curl?url=${encodeURIComponent(barkUrl + args[0])}`)
     term.writeln(`HTTP/${res.status} ${res.statusText}\n`)
   })
+  localCli.registerCommandHandler(['ls'], async (_args) => {
+    (innerRef as { channel: TTYChannel }).channel.onlineMembers().forEach((member) => {
+      term.writeln(`- ${member.name} (${member.id})`)
+    })
+    term.writeln('')
+  })
+  localCli.registerCommandHandler(['chat'], async (args) => {
+    await (innerRef as { channel: TTYChannel }).channel.sendMessage(args[0])
+    term.writeln('')
+  })
   localCli.registerCommandHandler(['ssh'], async (_args) => {
     // TODO add web ssh with wasm
   })
   localCli.registerCommandHandler(['ssc'], async (args) => {
-    const ttyConnected = (innerRef as { ttyConnected: React.RefObject<boolean> }).ttyConnected
-    if (!ttyConnected.current) {
+    const ttyConnected = (innerRef as { ttyConnected: boolean }).ttyConnected
+    if (!ttyConnected) {
       term.writeln('Not connected to tty, cannot start screen share session.')
       return
     }
-    const ssRef = (innerRef as { ssRef: React.RefObject<ScreenShareAddon | null> }).ssRef
-    const cmd = await ssRef.current?.requestDataChannel(args)
+    const ssRef = (innerRef as { ssRef: ScreenShareAddon | null }).ssRef
+    const cmd = await ssRef?.requestDataChannel(args)
     tty.send(`${cmd}\r`)
   })
 
