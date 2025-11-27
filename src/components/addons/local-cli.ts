@@ -1,8 +1,7 @@
-import { type IDisposable, type ITerminalAddon, Terminal } from '@xterm/xterm'
+import { type ITerminalAddon, Terminal } from '@xterm/xterm'
 
 export class LocalCliAddon implements ITerminalAddon {
   private term!: Terminal
-  private ctrlcHandler: IDisposable | null = null
   private currentLine: string = ''
   private cursorPos: number = 0
   private startOfLine: string = '> '
@@ -116,7 +115,7 @@ export class LocalCliAddon implements ITerminalAddon {
       // unknown input, ignore
       // console.log(`Unknown input: ${JSON.stringify(data)}`)
       // unicode
-      this.term.write(data)
+      Array.from(data).forEach(c => this.handleSingleCharInput(c));
       return
     }
 
