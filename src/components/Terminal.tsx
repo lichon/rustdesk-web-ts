@@ -25,7 +25,7 @@ const TEXT_DECODER = new TextDecoder()
 const CONFIG_KEYS = [
   'debug', // boolean enable message debug logging
   'url', // string backend url
-  'my-id', // string my rustdesk id, display on remote side
+  'name', // string my rustdesk id, display on remote side
   'webrtc', // boolean enable webrtc
   'cname', // boolean get cname of server host
   'turn-url', // string turn server url, turn://user:pass@host:port
@@ -50,12 +50,13 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
   const ttsPlayer = useMemo(() => new ChromeTTS(), [])
   const sbChannel: TTYChannel = useSupabaseChannel({
     roomName: getLocalConfig('channel-room') || 'public',
+    selfName: getLocalConfig('name') || 'web-' + Math.floor(Math.random() * 1000),
     onChannelOpen: () => {
       termRef.current?.writeln(`\n\x1b[32mConnected to ${getLocalConfig('channel-room')}.\x1b[0m\n`)
       cliRef.current?.writePrompt()
     },
     onChatMessage: (msg) => {
-      if (ChromeTTS.isSupported() && msg.sender !== 'Self') {
+      if (ChromeTTS.isSupported()) {
         ttsPlayer.speak(msg.content as string)
       }
       console.log(`${msg.sender}: ${msg.content}`)
@@ -259,8 +260,11 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     term.writeln(`HTTP/${res.status} ${res.statusText}\n`)
   })
   localCli.registerCommandHandler(['ls'], async (_args) => {
-    (innerRef as { channel: TTYChannel }).channel.onlineMembers().forEach((member) => {
-      term.writeln(`- ${member.name} (${member.id})`)
+    const channel = (innerRef as { channel: TTYChannel }).channel
+    term.writeln(`Online members (${getLocalConfig('channel-room')}):\n`)
+    channel.onlineMembers().forEach((member) => {
+      const isSelf = channel.presenceId() === member.id
+      term.writeln(`${isSelf ? '*' : '-'} ${member.name} (${member.id})`)
     })
     term.writeln('')
   })

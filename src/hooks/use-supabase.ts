@@ -32,44 +32,36 @@ interface ChannelMember {
 
 interface ChannelConfig {
   roomName: string
+  selfName?: string
   onChannelOpen?: () => void
   onChannelEvent?: (msg: ChannelMessage) => void
   onChannelRequest?: (req: ChannelCommand) => Promise<unknown>
   onChatMessage?: (msg: ChannelMessage) => void
 }
 
-const fakeName = 'user-' + Math.floor(Math.random() * 1000)
-const fakeId = crypto.randomUUID()
-const SELF_SENDER = 'Self'
-
+const myId = crypto.randomUUID()
 // cache of outgoing requests' resolvers
 const outgoingRequests = new Map<string, { resolve: (data: unknown) => void, reject: (err: Error) => void }>()
 
 export default function useSupabaseChannel(config: ChannelConfig) {
   let initConnected: boolean = false
-  let onlineMembersList: ChannelMember[] = []
+  const onlineMembersRef = { current: [] as ChannelMember[] }
 
   const channel = supabase.channel(`room:${config.roomName}:messages`, {
     config: {
       broadcast: { self: false },
-      presence: { key: fakeId },
+      presence: { key: myId },
       private: false,
     }
   }).on('broadcast', { event: 'message' }, (msg) => {
-    if (fakeId === msg.payload.id) {
-      msg.payload.sender = SELF_SENDER
-    }
     config.onChatMessage?.(msg.payload as ChannelMessage)
   }).on('broadcast', { event: 'event' }, (msg) => {
-    if (fakeId === msg.payload.id) {
-      msg.payload.sender = SELF_SENDER
-    }
     config.onChannelEvent?.(msg.payload as ChannelMessage)
   }).on('broadcast', { event: 'command' }, (msg) => {
     channelCommandHandler(msg.payload as ChannelMessage, channel)
   }).on('presence', { event: 'sync' }, () => {
     const newState = channel.presenceState<ChannelMember>()
-    onlineMembersList = Array.from(
+    onlineMembersRef.current = Array.from(
       Object.entries(newState).map(([key, values]) => [
         { id: key, name: values[0].name, image: values[0].image }
       ][0])
@@ -96,17 +88,17 @@ export default function useSupabaseChannel(config: ChannelConfig) {
       config.onChannelOpen?.()
     }
     await channel.track({
-      id: fakeId,
-      name: fakeName,
-      image: `https://api.dicebear.com/7.x/thumbs/svg?seed=${fakeId}`
+      id: myId,
+      name: config.selfName,
+      image: `https://api.dicebear.com/7.x/thumbs/svg?seed=${myId}`
     })
   })
 
   const newMessage = function (content: string | object): ChannelMessage {
     const message: ChannelMessage = {
-      id: fakeId,
+      id: myId,
       content: content,
-      sender: fakeName,
+      sender: config.selfName,
       timestamp: new Date().toISOString(),
     }
     return message
@@ -114,7 +106,7 @@ export default function useSupabaseChannel(config: ChannelConfig) {
 
   const channelCommandHandler = async (cmd: ChannelMessage, ch: typeof channel) => {
     const req = cmd.content as ChannelCommand
-    if (fakeId === cmd.id) {
+    if (myId === cmd.id) {
       // ignore commands from self
       return
     }
@@ -206,13 +198,18 @@ export default function useSupabaseChannel(config: ChannelConfig) {
     return channel.state == 'joined'
   }
 
+  const presenceId = (): string => {
+    return myId
+  }
+
   const onlineMembers = (): ChannelMember[] => {
-    return onlineMembersList
+    return onlineMembersRef.current
   }
 
   return {
     sendMessage,
     sendRequest,
+    presenceId,
     isConnected,
     onlineMembers
   }

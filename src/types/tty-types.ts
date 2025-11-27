@@ -31,6 +31,7 @@ type ChannelMember = {
 
 interface TTYChannel {
   sendMessage: (message: string) => Promise<void>
+  presenceId: () => string
   isConnected: () => boolean
   onlineMembers: () => ChannelMember[]
 }

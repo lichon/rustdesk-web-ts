@@ -24,7 +24,7 @@ function isWebrtcEnabled(config: Record<string, unknown>): boolean {
 }
 
 function getMyId(config: Record<string, unknown>): string {
-  return config['my-id']?.toString() || 'web'
+  return config['name']?.toString() || 'web'
 }
 
 function getTurnUrl(config: Record<string, unknown>): URL | null {
