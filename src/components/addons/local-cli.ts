@@ -1,11 +1,12 @@
-import { type ITerminalAddon, Terminal } from '@xterm/xterm'
+import { type IDisposable, type ITerminalAddon, Terminal } from '@xterm/xterm'
 
 export class LocalCliAddon implements ITerminalAddon {
   private term!: Terminal
+  private ctrlcHandler: IDisposable | null = null
   private currentLine: string = ''
   private cursorPos: number = 0
   private startOfLine: string = '> '
-  private commandHandlers: Record<string, (args: string[]) => void> = {}
+  private commandHandlers: Record<string, (args: string[]) => Promise<void>> = {}
   private commandHistory: string[] = []
   private historyCursor: number = 0
   private historySize: number;
@@ -34,16 +35,16 @@ export class LocalCliAddon implements ITerminalAddon {
     return this.currentLine
   }
 
-  _writeLineStart = () => {
+  writePrompt = () => {
     this.term.write(this.startOfLine)
   }
 
   defaultCommandHandler = (_cmd: string, _args: string[]) => {
     // this.term.writeln(`Command not found: ${cmd}`)
-    this._writeLineStart()
+    this.writePrompt()
   }
 
-  registerCommandHandler(command: string[], handler: (args: string[]) => void) {
+  registerCommandHandler(command: string[], handler: (args: string[]) => Promise<void>) {
     for (const cmd of command) {
       if (this.commandHandlers[cmd]) {
         console.warn(`Command '${cmd}' is already registered. Overwriting.`)
@@ -53,10 +54,42 @@ export class LocalCliAddon implements ITerminalAddon {
   }
 
   processCommand = (line: string, useDefault: boolean = true) => {
-    const [command, ...args] = line.trim().split(' ')
+    const parts: string[] = []
+    const tokenRegex = /((?:[^\s"']+|"[^"]*"|'[^']*'|["'])+)/g
+
+    for (const match of line.matchAll(tokenRegex)) {
+      const token = match[0]
+      let arg = ''
+      const quoteRegex = /"([^"]*)"|'([^']*)'|([^\s"']+|["'])/g
+      for (const quoteMatch of token.matchAll(quoteRegex)) {
+        if (quoteMatch[1] !== undefined) {
+          arg += quoteMatch[1]
+        } else if (quoteMatch[2] !== undefined) {
+          arg += quoteMatch[2]
+        } else {
+          arg += quoteMatch[3]
+        }
+      }
+      parts.push(arg)
+    }
+
+    if (parts.length === 0) {
+      this.writePrompt()
+      return
+    }
+
+    const [command, ...args] = parts
     const handler = this.commandHandlers[command]
     if (handler) {
-      handler(args)
+      this.term.options.disableStdin = true
+      handler(args).then(() => {
+      }).catch((err) => {
+        if (!err) return
+        this.term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
+      }).finally(() => {
+        this.writePrompt()
+        this.term.options.disableStdin = false
+      })
       return
     }
     if (useDefault) {
@@ -79,9 +112,11 @@ export class LocalCliAddon implements ITerminalAddon {
   handleOtherInput = (data: string) => {
     // Handle ANSI escape sequences
     // data len > 1
-    if (!data || data[0] != '\u001b') {
+    if (data[0] != '\u001b') {
       // unknown input, ignore
-      console.log(`Unknown input: ${JSON.stringify(data)}`)
+      // console.log(`Unknown input: ${JSON.stringify(data)}`)
+      // unicode
+      this.term.write(data)
       return
     }
 
@@ -186,7 +221,7 @@ export class LocalCliAddon implements ITerminalAddon {
         }
         this.processCommand(this.currentLine)
       } else {
-        this._writeLineStart()
+        this.writePrompt()
       }
       this.currentLine = ''
       this.cursorPos = 0
@@ -201,7 +236,7 @@ export class LocalCliAddon implements ITerminalAddon {
       }
     } else if (char === '\u0003') { // Ctrl+C
       this.term.write('^C\n')
-      this._writeLineStart()
+      this.writePrompt()
       this.currentLine = ''
       this.cursorPos = 0
     } else if (charCode >= '\u0000'.charCodeAt(0) && charCode <= '\u001f'.charCodeAt(0)) {
@@ -217,6 +252,7 @@ export class LocalCliAddon implements ITerminalAddon {
   }
 
   handleTermInput = (data: string) => {
+    if (!data) return
     if (data.length === 1) {
       this.handleSingleCharInput(data)
       return
@@ -238,7 +274,7 @@ export class LocalCliAddon implements ITerminalAddon {
 
     if (data === '\r') { // Enter
       if (this.connectedLineBuffer.trim()) {
-        this.processCommand(this.connectedLineBuffer.substring(1), false) // skip '#'
+        this.processCommand(this.connectedLineBuffer.substring(1)) // skip '#'
       }
       this.connectedLineBuffer = ''
     } else if (data === '\u007f') { // Backspace

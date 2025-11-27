@@ -28,6 +28,7 @@ const CONFIG_KEYS = [
   'turn-only', // boolean use only turn server
   'trzsz', // boolean enable trzsz file transfer, trs tsz cmd
   'zmodem', // boolean enable zmodem file transfer, kinda experimental
+  'bark-url', // string bark notification url
   'confirm-to-unload' // boolean enable confirm dialog on page unload
 ]
 
@@ -36,13 +37,18 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
   const termRef = useRef<Terminal | null>(null)
   const zmodemRef = useRef<ZmodemAddon | null>(null)
   const ssRef = useRef<ScreenShareAddon | null>(null)
+  const cliRef = useRef<LocalCliAddon | null>(null)
+
   const ttyConnected = useRef<boolean>(false)
   const ttyType: string = getBackendType(wsUrl)
 
   const innerRef = {
-    ttyConnected,
     setWsUrl,
-    ssRef
+    ttyConnected,
+    termRef,
+    ssRef,
+    cliRef,
+    zmodemRef
   }
 
   const ttyConfig: TTYConfig = {
@@ -66,7 +72,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
       ttyConnected.current = false
       termRef.current!.options.disableStdin = false
       termRef.current?.writeln(`\n\x1b[31mConnection closed. ${reason}\x1b[0m\n`)
-      termRef.current?.write('> ')
+      cliRef.current?.writePrompt()
     },
     onAuthRequired: async (prompt?: string) => handleSecretInput(termRef.current!, prompt)
   }
@@ -93,16 +99,16 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
     })
     termRef.current = term
 
-    const cli = loadLocalCli(term, tty, innerRef)
+    cliRef.current = loadLocalCli(term, tty, innerRef)
     loadScreenShare(term, ssRef)
     loadAddons(term)
 
     term.onData((data: string) => {
       if (ttyConnected.current) {
         tty.send(data)
-        cli.handleConnectedInput(data)
+        cliRef.current?.handleConnectedInput(data)
       } else {
-        cli.handleTermInput(data)
+        cliRef.current?.handleTermInput(data)
       }
     })
 
@@ -116,6 +122,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
     const { ro, resize } = registerResizeObserver(term, containerRef.current!)
 
     helloMessage(term)
+    cliRef.current?.writePrompt()
 
     return () => {
       tty.close()
@@ -172,41 +179,32 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
   const localCli = new LocalCliAddon()
   term.loadAddon(localCli)
 
-  localCli.registerCommandHandler(['help', 'h'], () => helpMessage(term))
-  localCli.registerCommandHandler(['reload', 'r'], () => window.location.reload())
-  localCli.registerCommandHandler(['connect', 'c'], (args) => {
+  localCli.registerCommandHandler(['help', 'h'], async () => helpMessage(term))
+  localCli.registerCommandHandler(['reload', 'r'], async () => window.location.reload())
+  localCli.registerCommandHandler(['connect', 'c'], async (args) => {
     const targetId = args[0]
     term.writeln(`Connecting to ${getDefaultUrl()}, with webrtc: ${getLocalConfig('webrtc')}`)
     tty.open({
       cols: term.cols,
       rows: term.rows,
       targetId
-    }).catch((err) => {
-      console.error('Connection error:', err)
-      term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
-      term.write('> ')
     })
   })
-  localCli.registerCommandHandler(['config'], (args) => {
-    handleConfigCommand(term, args).then(([key, value]) => {
-      // eslint-disable-next-line
-      key === 'url' && (innerRef as { setWsUrl: FnSetUrl }).setWsUrl(value)
-    }).catch(() => { /* ignore */ })
+  localCli.registerCommandHandler(['config'], async (args) => {
+    const [key, value] = await handleConfigCommand(term, args)
+    // eslint-disable-next-line
+    key === 'url' && (innerRef as { setWsUrl: FnSetUrl }).setWsUrl(value)
   })
-  localCli.registerCommandHandler(['clear'], () => {
-    term.clear()
-    term.write('> ')
-  })
-  localCli.registerCommandHandler(['nslookup'], async (args) => {
+  localCli.registerCommandHandler(['clear'], async () => { term.clear() })
+  localCli.registerCommandHandler(['nslookup', 'dig'], async (args) => {
     const encodedHost = encodeURIComponent(args[0])
     const res = await fetch(`/api/nslookup?host=${encodedHost}`)
-    res.json().then((data) => {
+    const data = await res.json()
+    if (!data['Answer']) {
+      term.writeln(`No answer for host: ${args[0]}\n`)
+    } else {
       term.writeln(JSON.stringify(data['Answer'], null, 2).replace(/\n/g, '\r\n'))
-      term.write('> ')
-    }).catch((err) => {
-      term.writeln(`\n\x1b[31mError: ${err.message}\x1b[0m\n`)
-      term.write('> ')
-    })
+    }
   })
   localCli.registerCommandHandler(['curl'], async (args) => {
     // simple curl implementation using fetch, done by backend to avoid CORS issue
@@ -214,34 +212,43 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     const res = await fetch(`/api/curl?url=${encodeURIComponent(args[args.length - 1])}`)
     term.writeln(`HTTP/${res.status} ${res.statusText}\n`)
     if (res.type.startsWith('application/json')) {
-      res.json().then((data) => {
-        term.writeln(JSON.stringify(data, null, 2).replace(/\n/g, '\r\n'))
-        term.write('> ')
-      })
+      const data = await res.json()
+      term.writeln(JSON.stringify(data, null, 2).replace(/\n/g, '\r\n'))
     } else {
-      res.text().then((data) => {
-        term.writeln(data.replace(/\n/g, '\r\n'))
-        term.write('> ')
-      })
+      const data = await res.text()
+      if (!data) {
+        term.writeln('\n')
+        return
+      }
+      term.writeln(data.replace(/\n/g, '\r\n'))
     }
   })
-  localCli.registerCommandHandler(['ssh'], (_args) => {
+  localCli.registerCommandHandler(['bark'], async (args) => {
+    // send bark notification via backend
+    const barkUrl = getLocalConfig('bark-url')
+    if (!barkUrl) {
+      term.writeln('Bark URL not set. Use "config bark-url <url>" to set it.\n')
+      return
+    }
+    if (!args[0]) {
+      term.writeln(`Bark URL is ${barkUrl}\n`)
+      return
+    }
+    const res = await fetch(`/api/curl?url=${encodeURIComponent(barkUrl + args[0])}`)
+    term.writeln(`HTTP/${res.status} ${res.statusText}\n`)
+  })
+  localCli.registerCommandHandler(['ssh'], async (_args) => {
     // TODO add web ssh with wasm
   })
-  localCli.registerCommandHandler(['ssc'], (args) => {
+  localCli.registerCommandHandler(['ssc'], async (args) => {
     const ttyConnected = (innerRef as { ttyConnected: React.RefObject<boolean> }).ttyConnected
     if (!ttyConnected.current) {
       term.writeln('Not connected to tty, cannot start screen share session.')
-      term.write('> ')
       return
     }
     const ssRef = (innerRef as { ssRef: React.RefObject<ScreenShareAddon | null> }).ssRef
-    term.options.disableStdin = true
-    ssRef.current?.requestDataChannel(args).then(cmd => {
-      tty.send(`${cmd}\r`)
-    }).finally(() => {
-      term.options.disableStdin = false
-    })
+    const cmd = await ssRef.current?.requestDataChannel(args)
+    tty.send(`${cmd}\r`)
   })
 
   return localCli
@@ -306,7 +313,7 @@ const setLocalConfig = (key: string, value: string): boolean => {
 const helloMessage = (term: Terminal) => {
   term.writeln('Welcome to the RustDesk terminal!')
   term.writeln('Type "help" or "h" for a list of available commands.')
-  term.write('> ')
+  term.writeln('')
 }
 
 const helpMessage = (term: Terminal) => {
@@ -320,7 +327,6 @@ const helpMessage = (term: Terminal) => {
   term.writeln('  (h) help               - Show this help message.')
   term.writeln('      clear              - Clear the terminal screen.')
   term.writeln('')
-  term.write('> ')
 }
 
 const handleSecretInput = (term: Terminal, prompt?: string): Promise<string> => {
@@ -358,7 +364,7 @@ const handleConfigCommand = async (term: Terminal, args: string[]) => {
         term.writeln(`${key}: (not set)`)
       }
     }
-    term.write('\n> ')
+    term.writeln('')
     return Promise.reject()
   }
 
@@ -367,32 +373,32 @@ const handleConfigCommand = async (term: Terminal, args: string[]) => {
     if (CONFIG_KEYS.includes(key)) {
       delLocalConfig(key)
       term.writeln(`config ${key} cleared.`)
-      term.write('\n> ')
+      term.writeln('')
       return Promise.reject()
     }
     term.writeln('Usage: config <key> <value>')
     term.writeln('Example:')
     term.writeln('  config url wss://hbbs.url/ws/id')
     term.writeln('  config url ttyd://ttyd.url')
-    term.write('\n> ')
+    term.writeln('')
     return Promise.reject()
   }
 
   if (!CONFIG_KEYS.includes(key)) {
     term.writeln(`Unknown config key: ${key}`)
     term.writeln(`Supported config keys: ${CONFIG_KEYS.join(', ')}`)
-    term.write('\n> ')
+    term.writeln('')
     return Promise.reject()
   }
 
   const value = args[1]
   if (setLocalConfig(key, value)) {
     term.writeln(`${key} set to: ${value}`)
-    term.write('\n> ')
+    term.writeln('')
     return Promise.resolve([key, value])
   }
 
-  term.write('\n> ')
+  term.writeln('')
   return Promise.reject()
 }
 
