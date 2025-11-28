@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { TTYChannel } from '../types/tty-types'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL!,
@@ -39,11 +40,15 @@ interface ChannelConfig {
   onChatMessage?: (msg: ChannelMessage) => void
 }
 
+let activeChannel: TTYChannel | null = null
 const myId = crypto.randomUUID()
 // cache of outgoing requests' resolvers
 const outgoingRequests = new Map<string, { resolve: (data: unknown) => void, reject: (err: Error) => void }>()
 
 export default function useSupabaseChannel(config: ChannelConfig) {
+  if (activeChannel) {
+    return activeChannel
+  }
   let initConnected: boolean = false
   const onlineMembersRef = { current: [] as ChannelMember[] }
 
@@ -206,7 +211,13 @@ export default function useSupabaseChannel(config: ChannelConfig) {
     return onlineMembersRef.current
   }
 
-  return {
+  const close = () => {
+    channel.unsubscribe()
+    activeChannel = null
+  }
+
+  return activeChannel = {
+    close,
     sendMessage,
     sendRequest,
     presenceId,

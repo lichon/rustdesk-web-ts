@@ -66,11 +66,11 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
   const innerRef = {
     setWsUrl,
     channel: sbChannel,
-    ttyConnected: ttyConnected.current,
-    termRef: termRef.current,
-    ssRef: ssRef.current,
-    cliRef: cliRef.current,
-    zmodemRef: zmodemRef.current,
+    ttyConnected: ttyConnected,
+    termRef: termRef,
+    ssRef: ssRef,
+    cliRef: cliRef,
+    zmodemRef: zmodemRef,
   }
 
   const ttyConfig: TTYConfig = {
@@ -276,12 +276,12 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     // TODO add web ssh with wasm
   })
   localCli.registerCommandHandler(['ssc'], async (args) => {
-    const ttyConnected = (innerRef as { ttyConnected: boolean }).ttyConnected
+    const ttyConnected = (innerRef as { ttyConnected: { current: boolean } }).ttyConnected.current
     if (!ttyConnected) {
       term.writeln('Not connected to tty, cannot start screen share session.')
       return
     }
-    const ssRef = (innerRef as { ssRef: ScreenShareAddon | null }).ssRef
+    const ssRef = (innerRef as { ssRef: { current: ScreenShareAddon | null } }).ssRef.current
     const cmd = await ssRef?.requestDataChannel(args)
     tty.send(`${cmd}\r`)
   })
@@ -347,7 +347,7 @@ const setLocalConfig = (key: string, value: string): boolean => {
 
 const helloMessage = (term: Terminal) => {
   term.writeln('Welcome to the RustDesk terminal!')
-  term.writeln('Type "help" or "h" for a list of available commands.')
+  term.writeln('Type "help" or "h" for available commands.')
   term.writeln('')
 }
 
