@@ -257,7 +257,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
       return
     }
     const res = await fetch(`/api/curl?url=${encodeURIComponent(barkUrl + args[0])}`)
-    term.writeln(`HTTP/${res.status} ${res.statusText}\n`)
+    term.writeln(`HTTP/${res.status} ${res.statusText} ${args[0]}\n`)
   })
   localCli.registerCommandHandler(['ls'], async (_args) => {
     const channel = (innerRef as { channel: TTYChannel }).channel

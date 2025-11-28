@@ -108,17 +108,31 @@ export class LocalCliAddon implements ITerminalAddon {
     this.cursorPos = this.currentLine.length
   }
 
+  private isFullWidth(char: string) {
+    const code = char.codePointAt(0)
+    if (!code) return false
+    return (code >= 0x1100 && (
+      code <= 0x115f ||  // Hangul Jamo
+      code === 0x2329 || code === 0x232a ||
+      (code >= 0x2e80 && code <= 0xa4cf && code !== 0x303f) || // CJK Radicals Supplement .. Yi Radicals
+      (code >= 0xac00 && code <= 0xd7a3) || // Hangul Syllables
+      (code >= 0xf900 && code <= 0xfaff) || // CJK Compatibility Ideographs
+      (code >= 0xfe10 && code <= 0xfe19) || // Vertical forms
+      (code >= 0xfe30 && code <= 0xfe6f) || // CJK Compatibility Forms
+      (code >= 0xff00 && code <= 0xff60) || // Fullwidth Forms
+      (code >= 0xffe0 && code <= 0xffe6) ||
+      (code >= 0x20000 && code <= 0x2fffd) ||
+      (code >= 0x30000 && code <= 0x3fffd)
+    ))
+  }
+
   handleOtherInput = (data: string) => {
-    // Handle ANSI escape sequences
-    // data len > 1
     if (data[0] != '\u001b') {
-      // unknown input, ignore
-      // console.log(`Unknown input: ${JSON.stringify(data)}`)
-      // unicode
       Array.from(data).forEach(c => this.handleSingleCharInput(c));
       return
     }
 
+    // Handle ANSI escape sequences
     switch (data.substring(1)) {
       case "[A": // Up arrow
         if (this.historyCursor > 0) {
@@ -134,20 +148,27 @@ export class LocalCliAddon implements ITerminalAddon {
         break;
       case "[D": // Left Arrow
         if (this.cursorPos > 0) {
-          this.term.write(data)
-          this.cursorPos--
+          const char = [...this.currentLine.slice(0, this.cursorPos)].pop() || ''
+          const visualLen = this.isFullWidth(char) ? 2 : 1
+          this.term.write(`\u001b[${visualLen}D`)
+          this.cursorPos -= char.length
         }
         break;
       case "[C": // Right Arrow
         if (this.cursorPos < this.currentLine.length) {
-          this.term.write(data)
-          this.cursorPos++
+          const char = [...this.currentLine.slice(this.cursorPos)][0] || ''
+          const visualLen = this.isFullWidth(char) ? 2 : 1
+          this.term.write(`\u001b[${visualLen}C`)
+          this.cursorPos += char.length
         }
         break;
       case "[3~": // Delete
         if (this.cursorPos < this.currentLine.length) {
-          const right = this.currentLine.slice(this.cursorPos + 1)
-          this.term.write(right + ' ' + '\b'.repeat(right.length + 1))
+          const char = [...this.currentLine.slice(this.cursorPos)][0] || ''
+          const visualLen = this.isFullWidth(char) ? 2 : 1
+          const right = this.currentLine.slice(this.cursorPos + char.length)
+          const rightVisualLen = [...right].reduce((acc, c) => acc + (this.isFullWidth(c) ? 2 : 1), 0)
+          this.term.write(right + ' '.repeat(visualLen) + '\b'.repeat(rightVisualLen + visualLen))
           this.currentLine = this.currentLine.slice(0, this.cursorPos) + right
         }
         break;
@@ -227,11 +248,14 @@ export class LocalCliAddon implements ITerminalAddon {
       this.historyCursor = this.commandHistory.length
     } else if (char === '\u007f') { // Backspace
       if (this.cursorPos > 0) {
-        const left = this.currentLine.slice(0, this.cursorPos - 1)
+        const charToRemove = [...this.currentLine.slice(0, this.cursorPos)].pop() || ''
+        const visualLen = this.isFullWidth(charToRemove) ? 2 : 1
+        const left = this.currentLine.slice(0, this.cursorPos - charToRemove.length)
         const right = this.currentLine.slice(this.cursorPos)
-        this.term.write('\b' + right + ' ' + '\b'.repeat(right.length + 1))
+        const rightVisualLen = [...right].reduce((acc, c) => acc + (this.isFullWidth(c) ? 2 : 1), 0)
+        this.term.write('\b'.repeat(visualLen) + right + ' '.repeat(visualLen) + '\b'.repeat(rightVisualLen + visualLen))
         this.currentLine = left + right
-        this.cursorPos--
+        this.cursorPos -= charToRemove.length
       }
     } else if (char === '\u0003') { // Ctrl+C
       this.term.write('^C\n')
@@ -243,9 +267,10 @@ export class LocalCliAddon implements ITerminalAddon {
     } else {
       const left = this.currentLine.slice(0, this.cursorPos)
       const right = this.currentLine.slice(this.cursorPos)
-      this.term.write(char + right + '\b'.repeat(right.length))
+      const rightVisualLen = [...right].reduce((acc, c) => acc + (this.isFullWidth(c) ? 2 : 1), 0)
+      this.term.write(char + right + '\b'.repeat(rightVisualLen))
       this.currentLine = left + char + right
-      this.cursorPos++
+      this.cursorPos += char.length
       this.historyCursor = this.commandHistory.length
     }
   }
