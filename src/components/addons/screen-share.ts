@@ -33,10 +33,25 @@ export class ScreenShareAddon implements ITerminalAddon {
     this.video = document.createElement('video')
     this.video.className =
       'rounded-[10px] absolute top-4 right-4 ' +
-      'h-[50%] aspect-video bg-black'
+      'h-[30%] aspect-video bg-black z-[10]'
     this.video.autoplay = true
     this.video.muted = true
     this.video.playsInline = true
+    this.video.controls = true
+    this.video.onenterpictureinpicture = () => {
+      this.video.style.visibility = 'hidden'
+    }
+    this.video.onleavepictureinpicture = () => {
+      this.video.style.visibility = 'visible'
+    }
+    this.video.onloadedmetadata = () => {
+      this.video.play().catch(err => {
+        console.error('Failed to play video', err)
+      })
+      this.video.requestPictureInPicture().catch(err => {
+        console.error('Failed to enter Picture-in-Picture mode', err)
+      })
+    }
   }
 
   activate(terminal: Terminal): void {

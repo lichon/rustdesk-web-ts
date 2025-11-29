@@ -206,6 +206,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
   localCli.registerCommandHandler(['connect', 'c'], async (args) => {
     const targetId = args[0]
     term.writeln(`Connecting to ${getDefaultUrl()}, with webrtc: ${getLocalConfig('webrtc')}`)
+    term.writeln('')
     tty.open({
       cols: term.cols,
       rows: term.rows,
@@ -256,8 +257,8 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
       term.writeln(`Bark URL is ${barkUrl}\n`)
       return
     }
-    const res = await fetch(`/api/curl?url=${encodeURIComponent(barkUrl + args[0])}`)
-    term.writeln(`HTTP/${res.status} ${res.statusText} ${args[0]}\n`)
+    const res = await fetch(`/api/curl?url=${encodeURIComponent(barkUrl + args.join(' '))}`)
+    term.writeln(`HTTP/${res.status} ${res.statusText} ${args.join(' ')}\n`)
   })
   localCli.registerCommandHandler(['ls'], async (_args) => {
     const channel = (innerRef as { channel: TTYChannel }).channel
@@ -269,7 +270,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     term.writeln('')
   })
   localCli.registerCommandHandler(['chat'], async (args) => {
-    await (innerRef as { channel: TTYChannel }).channel.sendMessage(args[0])
+    await (innerRef as { channel: TTYChannel }).channel.sendMessage(args.join(' '))
     term.writeln('')
   })
   localCli.registerCommandHandler(['ssh'], async (_args) => {
