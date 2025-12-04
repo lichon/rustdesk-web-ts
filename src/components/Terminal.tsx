@@ -204,27 +204,27 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
   localCli.registerCommandHandler(['help', 'h'], async () => helpMessage(term))
   localCli.registerCommandHandler(['reload', 'r'], async () => window.location.reload())
   localCli.registerCommandHandler(['connect', 'c'], async (args) => {
-    const targetId = args[0]
     term.writeln(`Connecting to ${getDefaultUrl()}, with webrtc: ${getLocalConfig('webrtc')}`)
     term.writeln('')
-    tty.open({
-      cols: term.cols,
-      rows: term.rows,
-      targetId
-    })
+    tty.open({ cols: term.cols, rows: term.rows, targetId: args[0] })
   })
   localCli.registerCommandHandler(['config'], async (args) => {
     const [key, value] = await handleConfigCommand(term, args)
     // eslint-disable-next-line
     key === 'url' && (innerRef as { setWsUrl: FnSetUrl }).setWsUrl(value)
   })
-  localCli.registerCommandHandler(['clear'], async () => { term.clear() })
+  localCli.registerCommandHandler(['clear'], async () => {
+    const ttyConnected = (innerRef as { ttyConnected: { current: boolean } }).ttyConnected.current
+    if (!ttyConnected) {
+      term.clear()
+    }
+  })
   localCli.registerCommandHandler(['nslookup', 'dig'], async (args) => {
     const encodedHost = encodeURIComponent(args[0])
-    const res = await fetch(`/api/nslookup?host=${encodedHost}`)
+    const res = await fetch(`/api/resolve?name=${encodedHost}`)
     const data = await res.json()
     if (!data['Answer']) {
-      term.writeln(`No answer for host: ${args[0]}\n`)
+      term.writeln(`No answer for: ${args[0]}\n`)
     } else {
       term.writeln(JSON.stringify(data['Answer'], null, 2).replace(/\n/g, '\r\n'))
     }
