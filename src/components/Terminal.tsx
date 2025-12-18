@@ -206,7 +206,9 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
   localCli.registerCommandHandler(['connect', 'c'], async (args) => {
     term.writeln(`Connecting to ${getDefaultUrl()}, with webrtc: ${getLocalConfig('webrtc')}`)
     term.writeln('')
-    tty.open({ cols: term.cols, rows: term.rows, targetId: args[0] })
+    tty.open({ cols: term.cols, rows: term.rows, targetId: args[0] }).catch((err) => {
+      term.writeln(`\n\x1b[31m${err}\x1b[0m\n`)
+    })
   })
 
   localCli.registerCommandHandler(['config'], async (args) => {
@@ -366,6 +368,7 @@ const helpMessage = (term: Terminal) => {
   term.writeln('  (c) connect <id>       - Connect to the server.')
   term.writeln('      config             - Show current settings.')
   term.writeln('      config url <v>     - Set backend URL.')
+  term.writeln('        rustdesk: wss://hbbs.url/ws/id, ttyd: ttyds://ttyd.url')
   term.writeln('      config webrtc true - Enable webrtc.')
   term.writeln('      config debug true  - Enable debug.')
   term.writeln('  (r) reload             - Reload the terminal.')
