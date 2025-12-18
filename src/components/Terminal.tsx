@@ -49,7 +49,7 @@ function TerminalInner({ wsUrl, setWsUrl }: { wsUrl: string, setWsUrl: FnSetUrl 
 
   const ttsPlayer = useMemo(() => new ChromeTTS(), [])
   const sbChannel: TTYChannel = useSupabaseChannel({
-    roomName: getLocalConfig('channel-room') || 'public',
+    roomName: getLocalConfig('channel-room'),
     selfName: getLocalConfig('name') || 'web-' + Math.floor(Math.random() * 1000),
     onChannelOpen: () => {
       termRef.current?.writeln(`\n\x1b[32mConnected to ${getLocalConfig('channel-room')}.\x1b[0m\n`)
@@ -339,8 +339,8 @@ const getDefaultUrl = () => {
   return localStorage.getItem('url') || '/ws/id'
 }
 
-const getLocalConfig = (key: string): string | null => {
-  return localStorage.getItem(key)
+const getLocalConfig = (key: string): string | undefined => {
+  return localStorage.getItem(key) as string | undefined
 }
 
 const delLocalConfig = (key: string) => {

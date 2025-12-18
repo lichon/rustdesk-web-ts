@@ -32,12 +32,21 @@ interface ChannelMember {
 }
 
 interface ChannelConfig {
-  roomName: string
+  roomName?: string
   selfName?: string
   onChannelOpen?: () => void
   onChannelEvent?: (msg: ChannelMessage) => void
   onChannelRequest?: (req: ChannelCommand) => Promise<unknown>
   onChatMessage?: (msg: ChannelMessage) => void
+}
+
+const dummyChannel = {
+  close: async () => { },
+  sendMessage: async () => { },
+  sendRequest: async () => { return { error: 'no channel config' } as ChannelCommand },
+  presenceId: () => '',
+  isConnected: () => false,
+  onlineMembers: () => []
 }
 
 let activeChannel: TTYChannel | null = null
@@ -48,6 +57,10 @@ const outgoingRequests = new Map<string, { resolve: (data: unknown) => void, rej
 export default function useSupabaseChannel(config: ChannelConfig) {
   if (activeChannel) {
     return activeChannel
+  }
+  if (!config.roomName?.length) {
+    console.warn('useSupabaseChannel: channel-room is empty')
+    return dummyChannel
   }
   let initConnected: boolean = false
   const onlineMembersRef = { current: [] as ChannelMember[] }
