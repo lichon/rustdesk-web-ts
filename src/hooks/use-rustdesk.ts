@@ -2,7 +2,7 @@ import * as rendezvous from './hbbs-rendezvous'
 import * as deskMsg from './hbbs-message'
 import type { TTYConfig, TTYOpen } from '../types/tty-types'
 
-import { Zstd } from "@hpcc-js/wasm-zstd";
+import { Zstd } from '@hpcc-js/wasm-zstd'
 
 let DEBUG_CONFIG = false
 const MSG_CHUNK_SIZE = 46 * 1024
@@ -107,7 +107,7 @@ class RustSessionImpl implements RustSession {
     }
     const pc = new RTCPeerConnection({
       iceServers: iceServers,
-      iceTransportPolicy: getTurnOnly(this.config) ? "relay" : "all"
+      iceTransportPolicy: getTurnOnly(this.config) ? 'relay' : 'all'
     })
     if (DEBUG_CONFIG) {
       pc.onconnectionstatechange = () => {
@@ -271,7 +271,7 @@ class RustSessionImpl implements RustSession {
           myPlatform: 'web',
           version: '1.4.4',
           union: {
-            oneofKind: "terminal",
+            oneofKind: 'terminal',
             terminal: {
               serviceId: '',
             }
