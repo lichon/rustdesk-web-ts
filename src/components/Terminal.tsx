@@ -208,17 +208,20 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     term.writeln('')
     tty.open({ cols: term.cols, rows: term.rows, targetId: args[0] })
   })
+
   localCli.registerCommandHandler(['config'], async (args) => {
     const [key, value] = await handleConfigCommand(term, args)
     // eslint-disable-next-line
     key === 'url' && (innerRef as { setWsUrl: FnSetUrl }).setWsUrl(value)
   })
+
   localCli.registerCommandHandler(['clear'], async () => {
     const ttyConnected = (innerRef as { ttyConnected: { current: boolean } }).ttyConnected.current
     if (!ttyConnected) {
       term.clear()
     }
   })
+
   localCli.registerCommandHandler(['nslookup', 'dig'], async (args) => {
     const encodedHost = encodeURIComponent(args[0])
     const res = await fetch(`/api/resolve?name=${encodedHost}`)
@@ -229,6 +232,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
       term.writeln(JSON.stringify(data['Answer'], null, 2).replace(/\n/g, '\r\n'))
     }
   })
+
   localCli.registerCommandHandler(['curl'], async (args) => {
     // simple curl implementation using fetch, done by backend to avoid CORS issue
     // TODO support more options, ws, wss
@@ -246,6 +250,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
       term.writeln(data.replace(/\n/g, '\r\n'))
     }
   })
+
   localCli.registerCommandHandler(['bark'], async (args) => {
     // send bark notification via backend
     const barkUrl = getLocalConfig('bark-url')
@@ -260,6 +265,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     const res = await fetch(`/api/curl?url=${encodeURIComponent(barkUrl + args.join(' '))}`)
     term.writeln(`HTTP/${res.status} ${res.statusText} ${args.join(' ')}\n`)
   })
+
   localCli.registerCommandHandler(['ls'], async (_args) => {
     const channel = (innerRef as { channel: TTYChannel }).channel
     term.writeln(`Online members (${getLocalConfig('channel-room')}):\n`)
@@ -269,13 +275,16 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     })
     term.writeln('')
   })
+
   localCli.registerCommandHandler(['chat'], async (args) => {
     await (innerRef as { channel: TTYChannel }).channel.sendMessage(args.join(' '))
     term.writeln('')
   })
+
   localCli.registerCommandHandler(['ssh'], async (_args) => {
     // TODO add web ssh with wasm
   })
+
   localCli.registerCommandHandler(['ssc'], async (args) => {
     const ttyConnected = (innerRef as { ttyConnected: { current: boolean } }).ttyConnected.current
     if (!ttyConnected) {
