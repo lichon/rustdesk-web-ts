@@ -203,7 +203,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
 
   localCli.registerCommandHandler(['help', 'h'], async () => helpMessage(term))
   localCli.registerCommandHandler(['reload', 'r'], async () => window.location.reload())
-  localCli.registerCommandHandler(['connect', 'c'], async (args) => {
+  localCli.registerCommandHandler(['connect'], async (args) => {
     term.writeln(`Connecting to ${getDefaultUrl()}, with webrtc: ${getLocalConfig('webrtc')}`)
     term.writeln('')
     tty.open({ cols: term.cols, rows: term.rows, targetId: args[0] }).catch((err) => {
@@ -278,7 +278,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     term.writeln('')
   })
 
-  localCli.registerCommandHandler(['chat'], async (args) => {
+  localCli.registerCommandHandler(['chat', 'c'], async (args) => {
     await (innerRef as { channel: TTYChannel }).channel.sendMessage(args.join(' '))
     term.writeln('')
   })
@@ -365,7 +365,7 @@ const helloMessage = (term: Terminal) => {
 
 const helpMessage = (term: Terminal) => {
   term.writeln('\nAvailable commands:')
-  term.writeln('  (c) connect <id>       - Connect to the server.')
+  term.writeln('      connect <id>       - Connect to the server.')
   term.writeln('      config             - Show current settings.')
   term.writeln('      config url <v>     - Set backend URL.')
   term.writeln('        rustdesk: wss://hbbs.url/ws/id, ttyd: ttyds://ttyd.url')
