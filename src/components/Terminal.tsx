@@ -253,7 +253,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
     }
   })
 
-  localCli.registerCommandHandler(['bark'], async (args) => {
+  localCli.registerCommandHandler(['bark', 'b'], async (args) => {
     // send bark notification via backend
     const barkUrl = getLocalConfig('bark-url')
     if (!barkUrl) {
@@ -264,7 +264,7 @@ function loadLocalCli(term: Terminal, tty: TTY, innerRef: unknown): LocalCliAddo
       term.writeln(`Bark URL is ${barkUrl}\n`)
       return
     }
-    const res = await fetch(`/api/curl?url=${encodeURIComponent(barkUrl + args.join(' '))}`)
+    const res = await fetch(`${barkUrl}${args.join(' ')}`)
     term.writeln(`HTTP/${res.status} ${res.statusText} ${args.join(' ')}\n`)
   })
 
