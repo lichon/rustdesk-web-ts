@@ -114,7 +114,7 @@ export default function useSupabaseChannel(config: ChannelConfig) {
 
   const newMessage = function (content: string | object): ChannelMessage {
     const message: ChannelMessage = {
-      id: myId,
+      id: crypto.randomUUID(),
       content: content,
       sender: config.selfName,
       timestamp: new Date().toISOString(),
